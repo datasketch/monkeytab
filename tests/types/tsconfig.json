@@ -1,0 +1,20 @@
+{
+  "_comment": "Standalone tsconfig for the public type contract test. Intentionally NOT extending the root tsconfig.json so this stays stable across syncs (the root is regenerated on every sync).",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@datasketch/monkeytab": ["../../dist/index.d.ts"]
+    }
+  },
+  "include": ["./consumer.ts"]
+}

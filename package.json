@@ -1,0 +1,78 @@
+{
+  "name": "@datasketch/monkeytab",
+  "version": "0.2.0",
+  "description": "Embeddable, editable React table component",
+  "keywords": [
+    "react",
+    "table",
+    "editable",
+    "spreadsheet",
+    "datatable",
+    "grid",
+    "tanstack"
+  ],
+  "homepage": "https://github.com/datasketch/monkeytab",
+  "bugs": "https://github.com/datasketch/monkeytab/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/datasketch/monkeytab.git"
+  },
+  "license": "MIT",
+  "author": "datasketch",
+  "type": "module",
+  "main": "./dist/monkeytab.js",
+  "module": "./dist/monkeytab.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/monkeytab.js"
+    }
+  },
+  "files": [
+    "dist/monkeytab.js",
+    "dist/index.d.ts",
+    "README.md",
+    "LICENSE",
+    "BROWSER.md",
+    "EXTENDING.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "vite build && cp src/browser/types.d.ts dist/index.d.ts",
+    "build:check": "tsc --noEmit",
+    "dev": "cd examples/browser-standalone && npm run dev",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "prepublishOnly": "npm run build"
+  },
+  "peerDependencies": {
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.0.0",
+    "@tanstack/react-table": "^8.0.0",
+    "@tanstack/react-virtual": "^3.0.0",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.0",
+    "@testing-library/react": "^16.1.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "@vitest/coverage-v8": "^2.1.0",
+    "jsdom": "^25.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.6.0",
+    "vite": "^5.4.0",
+    "vitest": "^2.1.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

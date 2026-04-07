@@ -1,0 +1,15 @@
+node_modules
+dist
+coverage
+*.log
+.DS_Store
+.env
+.env.local
+.vite
+deno.lock
+
+# Internal-only files written by the sync script — NEVER committed.
+# These contain context about the public/private split and the sync model.
+.local/
+CLAUDE.md
+.claude/
