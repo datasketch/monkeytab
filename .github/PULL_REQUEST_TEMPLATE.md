@@ -1,11 +1,4 @@
-<!--
-Thanks for contributing! A few quick things before you submit:
-
-This repo is a public mirror — your PR will be reviewed here, applied
-upstream by a maintainer, and then merged in this repo. Your commit
-attribution stays on the PR. See CONTRIBUTING.md → "How PRs get merged"
-for the full flow.
--->
+<!-- Thanks for contributing! See CONTRIBUTING.md for the full guidelines. -->
 
 **What this changes**
 

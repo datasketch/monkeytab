@@ -58,7 +58,7 @@ monkeytab/
 │   ├── browser/           # The @datasketch/monkeytab entry point
 │   └── adapters/
 │       └── memory/        # In-memory adapter (the default)
-├── tests/                 # Vitest test suite — public team owned
+├── tests/                 # Vitest test suite
 │   └── README.md          # How to write and run tests
 ├── examples/
 │   └── browser-standalone/   # Minimal demo app

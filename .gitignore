@@ -8,8 +8,7 @@ coverage
 .vite
 deno.lock
 
-# Internal-only files written by the sync script — NEVER committed.
-# These contain context about the public/private split and the sync model.
+# Local-only workspace files — never committed.
 .local/
 CLAUDE.md
 .claude/

@@ -4,15 +4,11 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
-// Test runner config for the public team's parallel test suite.
+// Vitest config for the @datasketch/monkeytab test suite.
 //
-// The public test suite lives in ./tests/ and is owned entirely by the
-// datasketch team. The sync script never touches it — every team member
-// can write their own tests, contributors can add tests via PRs, and
-// nothing the upstream sync owner does will overwrite them.
-//
-// Tests can import from the synced source via @monkeytab/* aliases,
-// matching the workspace package names used in the source code.
+// Tests live in ./tests/ — see tests/README.md for conventions.
+// The @monkeytab/* aliases below match the package names used in
+// the source so tests can import without relative paths.
 export default defineConfig({
   test: {
     globals: true,
