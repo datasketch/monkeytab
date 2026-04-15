@@ -209,6 +209,7 @@ export function EmbedMonkeyTable({
       rows={allRows}
       editable={false}
       height={config.height ?? '100%'}
+      maxHeight={config.maxHeight}
       rowHeight={config.rowHeight}
       showRowNumbers={config.rowNumbers}
       compactMode={config.compact}

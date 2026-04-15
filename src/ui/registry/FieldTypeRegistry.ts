@@ -21,12 +21,15 @@ import type {
  * No React dependency — stores type metadata only, not components.
  * Components are stored separately in ComponentRegistry.
  */
+export type FieldVisibility = 'public' | 'private';
+
 export interface FieldTypeDefinition<T extends FieldType = FieldType> {
   type: T;
   label: string;
   description: string;
   icon: string; // SVG filename in packages/ui/src/icons/field-types/
   category: 'basic' | 'advanced' | 'relation' | 'computed';
+  visibility: FieldVisibility;
   defaultOptions: FieldTypeOptionsMap[T];
   optionsSchema: FieldOptionSchema[];
   supportsSort: boolean;
@@ -155,6 +158,7 @@ export const TEXT_FIELD_DEFINITION: FieldTypeDefinition<'Text'> = {
   description: 'Single line or multi-line text',
   icon: 'text',
   category: 'basic',
+  visibility: 'public',
   defaultOptions: {
     maxLength: undefined,
     multiline: false,
@@ -202,6 +206,7 @@ export const NUMBER_FIELD_DEFINITION: FieldTypeDefinition<'Number'> = {
   description: 'Numeric values with optional formatting',
   icon: 'number',
   category: 'basic',
+  visibility: 'public',
   defaultOptions: {
     precision: 0,
     format: 'decimal',
@@ -267,6 +272,7 @@ export const BOOLEAN_FIELD_DEFINITION: FieldTypeDefinition<'Boolean'> = {
   description: 'True/false checkbox field',
   icon: 'boolean',
   category: 'basic',
+  visibility: 'public',
   defaultOptions: {
     displayAs: 'checkbox',
     trueLabel: 'Yes',
@@ -311,6 +317,7 @@ export const DATE_FIELD_DEFINITION: FieldTypeDefinition<'Date'> = {
   description: 'Date with optional time',
   icon: 'date',
   category: 'basic',
+  visibility: 'public',
   defaultOptions: {
     format: 'date',
     dateFormat: 'YYYY-MM-DD',
@@ -370,6 +377,7 @@ export const SINGLE_SELECT_FIELD_DEFINITION: FieldTypeDefinition<'SingleSelect'>
   description: 'Choose one option from a list',
   icon: 'single-select',
   category: 'basic',
+  visibility: 'public',
   defaultOptions: {
     options: [],
   },
@@ -393,6 +401,7 @@ export const MULTI_SELECT_FIELD_DEFINITION: FieldTypeDefinition<'MultiSelect'> =
   description: 'Choose multiple options from a list',
   icon: 'multi-select',
   category: 'basic',
+  visibility: 'public',
   defaultOptions: {
     options: [],
     maxSelections: undefined,
@@ -424,6 +433,7 @@ export const ATTACHMENT_FIELD_DEFINITION: FieldTypeDefinition<'Attachment'> = {
   description: 'Upload files and images',
   icon: 'attachment',
   category: 'advanced',
+  visibility: 'public',
   defaultOptions: {
     maxFiles: 10,
     maxFileSize: 10 * 1024 * 1024, // 10MB
@@ -464,6 +474,7 @@ export const IMAGE_FIELD_DEFINITION: FieldTypeDefinition<'Image'> = {
   description: 'Upload and display images',
   icon: 'image',
   category: 'advanced',
+  visibility: 'public',
   defaultOptions: {
     maxImages: 10,
     maxFileSize: 10 * 1024 * 1024, // 10MB
@@ -510,6 +521,7 @@ export const AUDIO_FIELD_DEFINITION: FieldTypeDefinition<'Audio'> = {
   description: 'Upload and play audio files',
   icon: 'audio',
   category: 'advanced',
+  visibility: 'private',
   defaultOptions: {
     maxFiles: 10,
     maxFileSize: 50 * 1024 * 1024, // 50MB
@@ -543,6 +555,7 @@ export const EMAIL_FIELD_DEFINITION: FieldTypeDefinition<'Email'> = {
   description: 'Email address with clickable mailto link',
   icon: 'email',
   category: 'basic',
+  visibility: 'public',
   defaultOptions: {},
   optionsSchema: [
     {
@@ -564,6 +577,7 @@ export const URL_FIELD_DEFINITION: FieldTypeDefinition<'URL'> = {
   description: 'Web link that opens in a new tab',
   icon: 'url',
   category: 'basic',
+  visibility: 'public',
   defaultOptions: {},
   optionsSchema: [
     {
@@ -585,6 +599,7 @@ export const PHONE_FIELD_DEFINITION: FieldTypeDefinition<'Phone'> = {
   description: 'Phone number with clickable tel link',
   icon: 'phone',
   category: 'basic',
+  visibility: 'public',
   defaultOptions: {},
   optionsSchema: [
     {
@@ -606,6 +621,7 @@ export const VIDEO_FIELD_DEFINITION: FieldTypeDefinition<'Video'> = {
   description: 'Upload and play video files',
   icon: 'video',
   category: 'advanced',
+  visibility: 'private',
   defaultOptions: {
     maxFiles: 10,
     maxFileSize: 100 * 1024 * 1024, // 100MB
@@ -639,6 +655,7 @@ export const COLOR_FIELD_DEFINITION: FieldTypeDefinition<'Color'> = {
   description: 'Color value with swatch preview',
   icon: 'color',
   category: 'advanced',
+  visibility: 'public',
   defaultOptions: {
     format: 'hex',
   },
@@ -667,6 +684,7 @@ export const RATING_FIELD_DEFINITION: FieldTypeDefinition<'Rating'> = {
   description: 'Star rating from 0 to max',
   icon: 'rating',
   category: 'advanced',
+  visibility: 'public',
   defaultOptions: {
     max: 5,
     icon: 'star',

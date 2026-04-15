@@ -425,16 +425,153 @@ function EmptyTableExample({ locale, language, ghostGrid, compactMode }: { local
   );
 }
 
-const TABS = [
+// ---------------------------------------------------------------------------
+// Example 7: Height modes comparison
+// ---------------------------------------------------------------------------
+
+const HEIGHT_COLUMNS = [
+  { id: 'Organization' },
+  { id: 'Slug' },
+  { id: 'Status', type: 'SingleSelect' as const, options: { options: [
+    { value: 'Synced', label: 'Synced', color: '#dcfce7' },
+    { value: 'Pending', label: 'Pending', color: '#fef3c7' },
+    { value: 'Error', label: 'Error', color: '#fecaca' },
+  ]}},
+  { id: 'Filter' },
+  { id: 'Link', type: 'URL' as const },
+];
+
+const HEIGHT_ROWS_3 = [
+  { Organization: 'test', Slug: 'test', Status: 'Synced', Filter: "filter(org_slug == 'test')", Link: '/test/db/news-articles' },
+  { Organization: 'testorg', Slug: 'testorg', Status: 'Synced', Filter: "filter(org_slug == 'testorg')", Link: '/testorg/db/news-articles' },
+  { Organization: 'acme', Slug: 'acme', Status: 'Pending', Filter: "filter(org_slug == 'acme')", Link: '/acme/db/news-articles' },
+];
+
+const HEIGHT_ROWS_1 = [HEIGHT_ROWS_3[0]];
+
+type HeightMode = 'auto' | 'auto-capped' | 'fixed-400' | 'fixed-400-no-ghost' | 'fill';
+
+const HEIGHT_MODES: { id: HeightMode; label: string; code: string }[] = [
+  { id: 'auto', label: 'auto', code: 'height="auto"' },
+  { id: 'auto-capped', label: 'auto + maxHeight', code: 'height="auto" maxHeight={300}' },
+  { id: 'fixed-400', label: '400px (ghost on)', code: 'height={400}' },
+  { id: 'fixed-400-no-ghost', label: '400px (ghost off)', code: 'height={400} ghostGrid={false}' },
+  { id: 'fill', label: '100% (fill parent)', code: 'height="100%"' },
+];
+
+function HeightModeTable({ rows, mode, locale, language, compactMode }: {
+  rows: Array<Record<string, Value>>;
+  mode: HeightMode;
+  locale: string;
+  language: string;
+  compactMode: boolean;
+}) {
+  const heightProps = (() => {
+    switch (mode) {
+      case 'auto': return { height: 'auto' as const };
+      case 'auto-capped': return { height: 'auto' as const, maxHeight: 300 };
+      case 'fixed-400': return { height: 400 };
+      case 'fixed-400-no-ghost': return { height: 400, ghostGrid: false as const };
+      case 'fill': return { height: '100%' };
+    }
+  })();
+
+  const needsContainer = mode === 'fill';
+
+  const table = (
+    <MonkeyTable
+      columns={HEIGHT_COLUMNS}
+      rows={rows}
+      editable={false}
+      showToolbar={false}
+      compactMode={compactMode}
+      locale={locale}
+      language={language}
+      {...heightProps}
+    />
+  );
+
+  if (needsContainer) {
+    return <div style={{ height: '300px', border: '1px dashed #d1d5db', borderRadius: '6px' }}>{table}</div>;
+  }
+  return table;
+}
+
+function HeightModesExample({ locale, language, compactMode }: { locale: string; language: string; compactMode: boolean }) {
+  const [mode, setMode] = useState<HeightMode>('auto');
+
+  const currentMode = HEIGHT_MODES.find((m) => m.id === mode)!;
+
+  return (
+    <div className="example">
+      <h2>Height Modes</h2>
+      <div className="desc" style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
+        <span>Compare how different <code>height</code> modes handle 0, 1, and 3 rows.</span>
+        <div style={{ display: 'flex', gap: '4px' }}>
+          {HEIGHT_MODES.map((m) => (
+            <button
+              key={m.id}
+              onClick={() => setMode(m.id)}
+              style={{
+                padding: '3px 10px',
+                fontSize: '12px',
+                fontWeight: mode === m.id ? 600 : 400,
+                borderRadius: '4px',
+                border: '1px solid',
+                borderColor: mode === m.id ? '#111827' : '#d1d5db',
+                background: mode === m.id ? '#111827' : 'white',
+                color: mode === m.id ? 'white' : '#374151',
+                cursor: 'pointer',
+              }}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{ marginBottom: '16px', padding: '6px 12px', background: '#f9fafb', borderRadius: '4px', fontFamily: 'monospace', fontSize: '13px', color: '#6b7280' }}>
+        {'<MonkeyTable '}{currentMode.code}{' />'}
+        {mode === 'fill' && <span style={{ color: '#9ca3af' }}> (inside a 300px container)</span>}
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+        {([
+          { label: '0 rows (empty)', rows: [] as Array<Record<string, Value>> },
+          { label: '1 row', rows: HEIGHT_ROWS_1 },
+          { label: '3 rows', rows: HEIGHT_ROWS_3 },
+        ]).map((scenario) => (
+          <div key={scenario.label}>
+            <div style={{ fontSize: '13px', fontWeight: 600, color: '#374151', marginBottom: '6px' }}>
+              {scenario.label}
+            </div>
+            <div style={{ border: '1px solid #e5e7eb', borderRadius: '6px', overflow: 'hidden' }}>
+              <HeightModeTable
+                rows={scenario.rows}
+                mode={mode}
+                locale={locale}
+                language={language}
+                compactMode={compactMode}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
+const TABS: Array<{ id: string; label: string; private?: boolean }> = [
   { id: 'editable', label: 'Editable' },
+  { id: 'height', label: 'Height Modes' },
   { id: 'columns', label: 'Column Options' },
   { id: 'empty', label: 'Empty Table' },
   { id: 'readonly', label: 'Read-Only' },
   { id: 'large', label: 'Large Dataset' },
   { id: 'pagination', label: 'Pagination' },
-] as const;
+];
 
-type TabId = typeof TABS[number]['id'];
+type TabId = string;
 
 function App() {
   const [tab, setTab] = useState<TabId>('editable');
@@ -467,7 +604,7 @@ function App() {
           {TABS.map((t) => (
             <button
               key={t.id}
-              className={`tab ${tab === t.id ? 'tab-active' : ''}`}
+              className={`tab ${tab === t.id ? 'tab-active' : ''}${t.private ? ' tab-private' : ''}`}
               onClick={() => setTab(t.id)}
             >
               {t.label}
@@ -550,6 +687,10 @@ function App() {
           </div>
         )}
 
+        {tab === 'height' && (
+          <HeightModesExample locale={locale} language={language} compactMode={compactMode} />
+        )}
+
         {tab === 'columns' && (
           <div className="example" style={{ display: 'flex', flexDirection: 'column', minHeight: 'calc(100vh - 200px)' }}>
             <h2>Column Options</h2>
@@ -602,6 +743,7 @@ function App() {
         {tab === 'pagination' && (
           <PaginationExample locale={locale} language={language} />
         )}
+
       </div>
     </div>
   );

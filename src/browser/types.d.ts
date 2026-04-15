@@ -692,7 +692,14 @@ export interface MonkeyTableProps {
   /** Whether more data is being fetched */
   paginationLoading?: boolean;
   // Layout
-  height?: string | number;
+  /** Container height.
+   *  - `'auto'`: fits content exactly — no scrollbar for small tables. Pair with `maxHeight` to cap.
+   *  - `number`: fixed pixel height. `ghostGrid` defaults to `true` to fill empty space.
+   *  - CSS string (`'100%'`, `'50vh'`): fills parent (default `'100%'`). */
+  height?: 'auto' | number | string;
+  /** Maximum height in pixels. Useful with `height="auto"` to cap growth, or with
+   *  `height="100%"` to limit fluid containers. Ignored when `height` is a fixed number. */
+  maxHeight?: number;
   rowHeight?: RowHeightOption;
   showRowNumbers?: boolean;
   compactMode?: boolean;
@@ -860,7 +867,10 @@ export interface TableViewConfig {
   compact?: boolean;
   rowNumbers?: boolean;
   ghostGrid?: boolean;
-  height?: number;
+  /** Container height: 'auto' to fit content, or pixels. Omit for 100%. */
+  height?: 'auto' | number;
+  /** Maximum height in pixels (useful with height='auto') */
+  maxHeight?: number;
   // Chrome
   toolbar?: boolean;
   showSearch?: boolean;

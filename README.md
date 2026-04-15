@@ -33,7 +33,7 @@ function App() {
         { Name: 'Beta', Score: 7.2, Status: 'done', Due: '2026-04-01', Approved: false },
       ]}
       onChange={(rows) => console.log('Updated:', rows)}
-      height={500}
+      height="auto"
     />
   );
 }

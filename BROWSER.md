@@ -28,7 +28,7 @@ function App() {
         { Name: 'Bob', Age: 25, Active: false },
       ]}
       onChange={(rows) => console.log('Updated:', rows)}
-      height={400}
+      height="auto"
     />
   );
 }
@@ -75,11 +75,12 @@ function App() {
 
 | Prop | Type | Default | Description |
 |---|---|---|---|
-| `height` | `number \| string` | `'100%'` | Container height (number = pixels) |
+| `height` | `'auto' \| number \| string` | `'100%'` | `'auto'` fits content, number = fixed pixels (ghost rows on), string = CSS |
+| `maxHeight` | `number` | — | Max height in px. Caps `'auto'` growth or fluid containers |
 | `rowHeight` | `RowHeightOption` | `'medium'` | `'short'` \| `'medium'` \| `'tall'` \| `'extra-tall'` \| `'fit'` |
 | `showRowNumbers` | `boolean` | `false` | Show row number column |
 | `compactMode` | `boolean` | `false` | Denser layout — smaller fonts, tighter padding |
-| `ghostGrid` | `boolean \| { rows?: number, columns?: number }` | — | Show faint placeholder cells to fill the viewport |
+| `ghostGrid` | `boolean \| { rows?: number, columns?: number }` | — | Show faint placeholder cells to fill the viewport. Defaults to `true` when `height` is a number |
 
 ### Permissions
 

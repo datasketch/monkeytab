@@ -283,7 +283,7 @@ export function Grid({
   // Ghost grid: track container size to auto-calculate ghost row/column counts
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   useEffect(() => {
-    if (!ghostGrid || !containerRef.current) return;
+    if (!ghostGrid || !containerRef.current || typeof ResizeObserver === 'undefined') return;
     const el = containerRef.current;
     const ro = new ResizeObserver(([entry]) => {
       setContainerSize({ width: entry.contentRect.width, height: entry.contentRect.height });

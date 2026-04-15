@@ -37,8 +37,10 @@ export interface TableViewConfig {
   rowNumbers?: boolean;
   /** Show ghost grid to fill viewport */
   ghostGrid?: boolean;
-  /** Container height in pixels (omit for auto/100%) */
-  height?: number;
+  /** Container height: 'auto' to fit content, or pixels. Omit for 100%. */
+  height?: 'auto' | number;
+  /** Maximum height in pixels (useful with height='auto') */
+  maxHeight?: number;
 
   // ── Toolbar & chrome ─────────────────────────────────────────────────────
   /** Show the toolbar (default: true for pages, false for embeds) */

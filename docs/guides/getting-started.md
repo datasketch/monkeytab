@@ -28,7 +28,7 @@ function App() {
         { Name: 'Bob', Age: 25, Active: false },
       ]}
       onChange={(rows) => console.log('Updated:', rows)}
-      height={400}
+      height="auto"
     />
   );
 }

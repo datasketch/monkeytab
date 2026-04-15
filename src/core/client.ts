@@ -1,6 +1,6 @@
 /**
  * Client interface for MonkeyTab
- * Implemented by HttpClient, MockClient, TauriClient, etc.
+ * Implemented by HttpClient, MockClient, etc.
  */
 
 import type {

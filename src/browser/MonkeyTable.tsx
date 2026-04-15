@@ -111,8 +111,14 @@ export interface MonkeyTableProps {
   /** Show faint ghost rows/columns to fill the viewport, spreadsheet-style.
    *  `true` auto-fills the visible area. Pass `{ rows, columns }` for explicit counts. */
   ghostGrid?: boolean | { rows?: number; columns?: number };
-  /** CSS height for the container (number = pixels, string = CSS value) */
-  height?: string | number;
+  /** Container height.
+   *  - `'auto'`: fits content exactly — no scrollbar for small tables. Pair with `maxHeight` to cap.
+   *  - `number`: fixed pixel height. `ghostGrid` defaults to `true` to fill empty space.
+   *  - CSS string (`'100%'`, `'50vh'`): fills parent (default `'100%'`). */
+  height?: 'auto' | number | string;
+  /** Maximum height in pixels. Useful with `height="auto"` to cap growth, or with
+   *  `height="100%"` to limit fluid containers. Ignored when `height` is a fixed number. */
+  maxHeight?: number;
   /** Row height preset (default: 'medium') */
   rowHeight?: RowHeightOption;
   /** Show row number column (default: false) */
@@ -190,6 +196,14 @@ export interface MonkeyTableProps {
 const BASE_ID = 'base-1';
 const TABLE_ID = 'table-1';
 
+// Chrome heights for auto-height calculation (must match Grid/TableView layout)
+const AUTO_HEIGHT_HEADER = 44;
+const AUTO_HEIGHT_TOOLBAR = 40;
+const AUTO_HEIGHT_FOOTER = 37;
+const AUTO_HEIGHT_CHROME = 2;
+const AUTO_ROW_HEIGHTS: Record<string, number> = { short: 32, medium: 44, tall: 64, 'extra-tall': 88 };
+const AUTO_COMPACT_ROW_HEIGHTS: Record<string, number> = { short: 24, medium: 28, tall: 40, 'extra-tall': 60 };
+
 export function MonkeyTable({
   // Data
   columns,
@@ -214,6 +228,7 @@ export function MonkeyTable({
   // Layout
   ghostGrid,
   height = '100%',
+  maxHeight,
   rowHeight,
   showRowNumbers,
   compactMode,
@@ -635,8 +650,33 @@ export function MonkeyTable({
     );
   }
 
+  // ── Height mode resolution ───────────────────────────────────────────
+  const isAutoHeight = height === 'auto';
+  const isFixedHeight = typeof height === 'number';
+
+  let resolvedHeight: string | number = height;
+  if (isAutoHeight) {
+    const rowHeightKey = rowHeight ?? 'medium';
+    const cellH = rowHeightKey === 'fit'
+      ? (compactMode ? 28 : 44)
+      : (compactMode ? AUTO_COMPACT_ROW_HEIGHTS : AUTO_ROW_HEIGHTS)[rowHeightKey] ?? 44;
+    const rowCount = inputRows?.length ?? 0;
+    const computed = AUTO_HEIGHT_HEADER
+      + (showToolbar !== false ? AUTO_HEIGHT_TOOLBAR : 0)
+      + rowCount * cellH
+      + AUTO_HEIGHT_FOOTER
+      + AUTO_HEIGHT_CHROME;
+    resolvedHeight = maxHeight ? Math.min(computed, maxHeight) : computed;
+  }
+
+  // Ghost grid: default to true for fixed-pixel heights so empty space is filled
+  const resolvedGhostGrid = ghostGrid !== undefined
+    ? ghostGrid
+    : isFixedHeight ? true : undefined;
+
   const containerStyle: React.CSSProperties = {
-    height: typeof height === 'number' ? `${height}px` : height,
+    height: typeof resolvedHeight === 'number' ? `${resolvedHeight}px` : resolvedHeight,
+    ...(maxHeight && !isFixedHeight && !isAutoHeight && { maxHeight: `${maxHeight}px` }),
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
@@ -671,7 +711,7 @@ export function MonkeyTable({
                 page={page}
                 pageSize={pageSize}
                 onPageChange={onPageChange}
-                ghostGrid={ghostGrid}
+                ghostGrid={resolvedGhostGrid}
                 paginationMode={paginationMode}
                 paginationLoading={paginationLoading}
               />

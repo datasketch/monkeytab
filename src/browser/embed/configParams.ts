@@ -12,7 +12,8 @@
  *   compact=true
  *   rowNumbers=true
  *   ghostGrid=true
- *   height=500
+ *   height=500                     (or height=auto)
+ *   maxHeight=600
  *   toolbar=false
  *   showSearch=false
  *   showFilters=false
@@ -59,6 +60,7 @@ export function configToParams(config: TableViewConfig): URLSearchParams {
   if (config.rowNumbers !== undefined) p.set('rowNumbers', String(config.rowNumbers));
   if (config.ghostGrid !== undefined) p.set('ghostGrid', String(config.ghostGrid));
   if (config.height) p.set('height', String(config.height));
+  if (config.maxHeight) p.set('maxHeight', String(config.maxHeight));
 
   if (config.toolbar !== undefined) p.set('toolbar', String(config.toolbar));
   if (config.showSearch !== undefined) p.set('showSearch', String(config.showSearch));
@@ -124,8 +126,18 @@ export function paramsToConfig(params: URLSearchParams): TableViewConfig {
 
   const height = params.get('height');
   if (height) {
-    const n = parseInt(height, 10);
-    if (n > 0) config.height = n;
+    if (height === 'auto') {
+      config.height = 'auto';
+    } else {
+      const n = parseInt(height, 10);
+      if (n > 0) config.height = n;
+    }
+  }
+
+  const maxHeight = params.get('maxHeight');
+  if (maxHeight) {
+    const n = parseInt(maxHeight, 10);
+    if (n > 0) config.maxHeight = n;
   }
 
   const locale = params.get('locale');
