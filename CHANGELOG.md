@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-04-15
+
+### New
+- **`height="auto"` mode** — fits content exactly, no scrollbar for small tables. Pair with `maxHeight` to cap growth.
+- **`maxHeight` prop** — caps container height for `auto` or fluid (`100%`) layouts.
+
+### Changed
+- **`ghostGrid` defaults to `true`** when `height` is a fixed pixel value — empty space is filled with placeholder rows instead of blank white area.
+
+### Fixed
+- **`ResizeObserver` guard** — ghost grid no longer throws in SSR/jsdom environments.
+
 ## [0.2.0] — 2026-04-07
 
 First public release.
@@ -63,5 +75,6 @@ First public release.
 - `onUpload` prop — bring your own file upload (S3, Cloudinary, etc.)
 - Drag-and-drop and paste support for Image cells
 
-[Unreleased]: https://github.com/datasketch/monkeytab/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/datasketch/monkeytab/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/datasketch/monkeytab/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/datasketch/monkeytab/releases/tag/v0.2.0

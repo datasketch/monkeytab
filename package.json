@@ -1,6 +1,6 @@
 {
   "name": "@datasketch/monkeytab",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Embeddable, editable React table component",
   "keywords": [
     "react",
