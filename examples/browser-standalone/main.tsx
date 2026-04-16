@@ -653,7 +653,7 @@ function App() {
             >
               <option value="">None</option>
               {COLUMNS
-                .filter((c) => c.type === 'SingleSelect' || c.type === 'MultiSelect' || c.type === 'Boolean')
+                .filter((c) => (['SingleSelect', 'MultiSelect', 'Boolean'] as string[]).includes(c.type as string))
                 .map((c) => (
                   <option key={c.id} value={c.id}>{c.id}</option>
                 ))}
