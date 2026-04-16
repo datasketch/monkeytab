@@ -671,6 +671,24 @@ export interface MonkeyTableProps {
   onRowClick?: (row: Record<string, Value>) => void;
   /** Called when a single cell value changes — fires with rowId, fieldId, new and old values */
   onCellChange?: (rowId: string, fieldId: string, newValue: Value, oldValue: Value) => void;
+  /** Render prop for custom bulk actions when rows are selected */
+  selectionActions?: (selectedIds: string[], clearSelection: () => void) => React.ReactNode;
+  // Grouping
+  /** Field ID to group rows by (single column). Omit or null for no grouping. */
+  groupBy?: string | null;
+  /** Default collapsed state for groups (default: false = expanded) */
+  groupCollapsed?: boolean;
+  /** Called when user changes grouping via column header menu */
+  onGroupByChange?: (fieldId: string | null) => void;
+  /** Group display order. 'auto' uses SingleSelect option order or alphabetical; 'asc'/'desc' sort by value; 'count-asc'/'count-desc' sort by group size; or pass an array of values for explicit ordering. */
+  groupOrder?: 'auto' | 'asc' | 'desc' | 'count-asc' | 'count-desc' | string[];
+  // Row coloring
+  /** Field ID whose value determines each row's background tint. Uses SingleSelect option colors and Boolean defaults. */
+  colorBy?: string | null;
+  /** Called when user changes coloring via column header menu */
+  onColorByChange?: (fieldId: string | null) => void;
+  /** Optional per-value color overrides, keyed by stringified value */
+  colorByMap?: Record<string, string>;
   // Sorting
   /** Controlled sort field */
   sortBy?: string | null;
@@ -705,6 +723,12 @@ export interface MonkeyTableProps {
   compactMode?: boolean;
   /** Show faint ghost rows/columns to fill the viewport. true = auto, or { rows, columns } for explicit counts. */
   ghostGrid?: boolean | { rows?: number; columns?: number };
+  /** Column sizing strategy. 'auto' (default) sizes each column to its content, 'fill' distributes container width, 'fixed' uses 180px. */
+  columnFit?: 'auto' | 'fill' | 'fixed';
+  /** Minimum column width in 'auto' mode (default: 60). Per-column minWidth overrides. */
+  autoFitMin?: number;
+  /** Maximum column width in 'auto' mode (default: 320). Per-column maxWidth overrides. */
+  autoFitMax?: number;
   // Permissions
   editable?: boolean;
   allowCreateField?: boolean;

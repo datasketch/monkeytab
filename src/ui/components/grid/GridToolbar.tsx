@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, type ReactNode } from 'react';
 import type { RowHeightOption } from './Grid.tsx';
 import { useI18n } from '../../i18n/index.ts';
 
@@ -18,7 +18,10 @@ interface GridToolbarProps {
   showRowNumbers?: boolean;
   onShowRowNumbersChange?: (show: boolean) => void;
   selectedCount?: number;
+  selectedRowIds?: string[];
   onDeleteSelected?: () => void;
+  onClearSelection?: () => void;
+  selectionActions?: (selectedIds: string[], clearSelection: () => void) => ReactNode;
   totalRecords?: number;
   searchQuery?: string;
   onSearchChange?: (query: string) => void;
@@ -35,7 +38,10 @@ export function GridToolbar({
   showRowNumbers = false,
   onShowRowNumbersChange,
   selectedCount = 0,
+  selectedRowIds = [],
   onDeleteSelected,
+  onClearSelection,
+  selectionActions,
   totalRecords,
   searchQuery = '',
   onSearchChange,
@@ -227,6 +233,7 @@ export function GridToolbar({
               {t('toolbar.delete')}
             </button>
           )}
+          {selectionActions && onClearSelection && selectionActions(selectedRowIds, onClearSelection)}
         </div>
       )}
 

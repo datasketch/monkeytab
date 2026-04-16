@@ -92,9 +92,31 @@ export interface TableViewProps {
   paginationLoading?: boolean;
   /** Show faint ghost rows/columns to fill the viewport, spreadsheet-style */
   ghostGrid?: boolean | { rows?: number; columns?: number };
+  /** Column sizing strategy — 'auto' (default) fits content, 'fill' distributes width, 'fixed' uses 180px */
+  columnFit?: 'auto' | 'fill' | 'fixed';
+  /** Min column width in 'auto' mode (default: 60) */
+  autoFitMin?: number;
+  /** Max column width in 'auto' mode (default: 320) */
+  autoFitMax?: number;
+  /** Render prop for custom bulk actions when rows are selected */
+  selectionActions?: (selectedIds: string[], clearSelection: () => void) => React.ReactNode;
+  /** Field ID to group rows by */
+  groupBy?: string | null;
+  /** Default collapsed state for groups */
+  groupCollapsed?: boolean;
+  /** Called when user changes grouping via column header menu */
+  onGroupByChange?: (fieldId: string | null) => void;
+  /** Group display order */
+  groupOrder?: 'auto' | 'asc' | 'desc' | 'count-asc' | 'count-desc' | string[];
+  /** Field ID whose value determines each row's background tint */
+  colorBy?: string | null;
+  /** Called when user changes coloring via column header menu */
+  onColorByChange?: (fieldId: string | null) => void;
+  /** Optional per-value color overrides */
+  colorByMap?: Record<string, string>;
 }
 
-export function TableView({ baseId, tableId, onNavigate, onNavigateHome, onSelectionChange, selectedRowIds, onRowClick, customRenderers, customIcons, columnEditable, columnWidth, columnMinWidth, columnMaxWidth, columnSortable, columnAlign, onUpload, onCellChange, onSortChange, sortBy, sortDirection, totalRows, page = 1, pageSize = 500, onPageChange, paginationMode = 'simple', paginationLoading, ghostGrid }: TableViewProps) {
+export function TableView({ baseId, tableId, onNavigate, onNavigateHome, onSelectionChange, selectedRowIds, onRowClick, customRenderers, customIcons, columnEditable, columnWidth, columnMinWidth, columnMaxWidth, columnSortable, columnAlign, onUpload, onCellChange, onSortChange, sortBy, sortDirection, totalRows, page = 1, pageSize = 500, onPageChange, paginationMode = 'simple', paginationLoading, ghostGrid, columnFit, autoFitMin, autoFitMax, selectionActions, groupBy, groupCollapsed, onGroupByChange, groupOrder, colorBy, onColorByChange, colorByMap }: TableViewProps) {
   const { t } = useI18n();
   const client = useClient();
   const { data: base } = useBase(baseId);
@@ -434,7 +456,10 @@ export function TableView({ baseId, tableId, onNavigate, onNavigateHome, onSelec
             showRowNumbers={settings.showRowNumbersControl ? displayShowRowNumbers : undefined}
             onShowRowNumbersChange={settings.showRowNumbersControl ? handleShowRowNumbersChange : undefined}
             selectedCount={selectedRows.size}
+            selectedRowIds={Array.from(selectedRows)}
             onDeleteSelected={!isReadOnly ? handleDeleteSelected : undefined}
+            onClearSelection={() => { setSelectedRows(new Set()); onSelectionChange?.([]); }}
+            selectionActions={selectionActions}
             totalRecords={rows.length}
             searchQuery={settings.showSearch ? searchQuery : undefined}
             onSearchChange={settings.showSearch ? setSearchQuery : undefined}
@@ -492,6 +517,16 @@ export function TableView({ baseId, tableId, onNavigate, onNavigateHome, onSelec
           onUpload={onUpload}
           loading={isFetching || rowsLoading}
           ghostGrid={ghostGrid}
+          columnFit={columnFit}
+          autoFitMin={autoFitMin}
+          autoFitMax={autoFitMax}
+          groupBy={groupBy}
+          groupCollapsed={groupCollapsed}
+          onGroupByChange={onGroupByChange}
+          groupOrder={groupOrder}
+          colorBy={colorBy}
+          onColorByChange={onColorByChange}
+          colorByMap={colorByMap}
         />
       </div>
 

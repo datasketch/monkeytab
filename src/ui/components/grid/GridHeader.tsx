@@ -63,6 +63,7 @@ export function GridHeader({
   const [optionsPanelOpen, setOptionsPanelOpen] = useState(false);
   const [typeMenuOpen, setTypeMenuOpen] = useState(false);
   const [validating, setValidating] = useState(false);
+  const [isCramped, setIsCramped] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
     targetType: FieldType;
     compatible: number;
@@ -72,6 +73,17 @@ export function GridHeader({
   } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // Hide the type icon when the header is too cramped to show it with the label
+  useEffect(() => {
+    if (!rootRef.current || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(([entry]) => {
+      setIsCramped(entry.contentRect.width < 70);
+    });
+    ro.observe(rootRef.current);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -170,6 +182,7 @@ export function GridHeader({
 
   return (
     <div
+      ref={rootRef}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -184,10 +197,12 @@ export function GridHeader({
         }),
       }}
     >
-      {/* Field type icon */}
-      <span title={field.type} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: isCompact ? 12 : 14, height: isCompact ? 12 : 14, flexShrink: 0, color: '#6b7280' }}>
-        {customIcon ?? <FieldTypeIcon type={field.type} size={isCompact ? 12 : 14} style={{ color: '#6b7280' }} />}
-      </span>
+      {/* Field type icon — hidden when header is too cramped */}
+      {!isCramped && (
+        <span title={field.type} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: isCompact ? 12 : 14, height: isCompact ? 12 : 14, flexShrink: 0, color: '#6b7280' }}>
+          {customIcon ?? <FieldTypeIcon type={field.type} size={isCompact ? 12 : 14} style={{ color: '#6b7280' }} />}
+        </span>
+      )}
 
       {/* Editable name */}
       {isEditing ? (

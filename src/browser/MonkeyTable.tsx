@@ -85,6 +85,33 @@ export interface MonkeyTableProps {
   /** Called when a single cell value changes — fires before the mutation with rowId, fieldId, new and old values */
   onCellChange?: (rowId: string, fieldId: string, newValue: Value, oldValue: Value) => void;
 
+  /** Render prop for custom bulk actions shown when rows are selected.
+   *  Receives the selected row IDs and a function to clear the selection. */
+  selectionActions?: (selectedIds: string[], clearSelection: () => void) => React.ReactNode;
+
+  // ── Grouping ──────────────────────────────────────────────────────────────
+  /** Field ID to group rows by (single column). Omit or null for no grouping. */
+  groupBy?: string | null;
+  /** Default collapsed state for groups (default: false = expanded) */
+  groupCollapsed?: boolean;
+  /** Called when user changes grouping via column header menu */
+  onGroupByChange?: (fieldId: string | null) => void;
+  /** Group display order.
+   *  - `'auto'` (default): SingleSelect/MultiSelect use their option order; other fields sort alphabetically.
+   *  - `'asc'` / `'desc'`: alphabetical / reverse-alphabetical by group value.
+   *  - `'count-desc'` / `'count-asc'`: by row count within each group.
+   *  - `string[]`: explicit order — list of group values in the desired sequence. */
+  groupOrder?: 'auto' | 'asc' | 'desc' | 'count-asc' | 'count-desc' | string[];
+
+  // ── Row Coloring ──────────────────────────────────────────────────────────
+  /** Field ID whose value determines each row's background tint. Uses the field's
+   *  existing color mapping (SingleSelect option colors, Boolean true/false). */
+  colorBy?: string | null;
+  /** Called when user changes coloring via column header menu */
+  onColorByChange?: (fieldId: string | null) => void;
+  /** Optional per-value color overrides, keyed by stringified value. */
+  colorByMap?: Record<string, string>;
+
   // ── Sorting ───────────────────────────────────────────────────────────────
   /** Controlled sort field — the column currently sorted */
   sortBy?: string | null;
@@ -119,6 +146,15 @@ export interface MonkeyTableProps {
   /** Maximum height in pixels. Useful with `height="auto"` to cap growth, or with
    *  `height="100%"` to limit fluid containers. Ignored when `height` is a fixed number. */
   maxHeight?: number;
+  /** Column sizing strategy.
+   *  - `'auto'` (default): each column sized to fit its content (header + data). Table may scroll horizontally.
+   *  - `'fill'`: distribute available container width evenly across columns (no horizontal overflow).
+   *  - `'fixed'`: each column starts at 180px (or its `width` prop). */
+  columnFit?: 'auto' | 'fill' | 'fixed';
+  /** Minimum column width in `'auto'` mode (default: 60). Per-column `minWidth` overrides this. */
+  autoFitMin?: number;
+  /** Maximum column width in `'auto'` mode (default: 320). Per-column `maxWidth` overrides this. */
+  autoFitMax?: number;
   /** Row height preset (default: 'medium') */
   rowHeight?: RowHeightOption;
   /** Show row number column (default: false) */
@@ -214,6 +250,16 @@ export function MonkeyTable({
   selectedRowIds,
   onRowClick,
   onCellChange,
+  selectionActions,
+  // Grouping
+  groupBy,
+  groupCollapsed,
+  onGroupByChange,
+  groupOrder,
+  // Row coloring
+  colorBy,
+  onColorByChange,
+  colorByMap,
   // Sorting
   sortBy,
   sortDirection,
@@ -230,6 +276,9 @@ export function MonkeyTable({
   height = '100%',
   maxHeight,
   rowHeight,
+  columnFit = 'auto',
+  autoFitMin,
+  autoFitMax,
   showRowNumbers,
   compactMode,
   // Permissions
@@ -680,6 +729,7 @@ export function MonkeyTable({
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
+    minWidth: 0, // Allow shrinking inside flex parents (prevents horizontal page overflow)
   };
 
   return (
@@ -712,8 +762,19 @@ export function MonkeyTable({
                 pageSize={pageSize}
                 onPageChange={onPageChange}
                 ghostGrid={resolvedGhostGrid}
+                columnFit={columnFit}
+                autoFitMin={autoFitMin}
+                autoFitMax={autoFitMax}
                 paginationMode={paginationMode}
                 paginationLoading={paginationLoading}
+                selectionActions={selectionActions}
+                groupBy={groupBy}
+                groupCollapsed={groupCollapsed}
+                onGroupByChange={onGroupByChange}
+                groupOrder={groupOrder}
+                colorBy={colorBy}
+                onColorByChange={onColorByChange}
+                colorByMap={colorByMap}
               />
             </GridStoreProvider>
           </I18nProvider>

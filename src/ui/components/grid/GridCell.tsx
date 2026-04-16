@@ -323,7 +323,8 @@ export function GridCell({ rowId, field, value, row, customRenderer, align, onSa
           <Renderer value={value} field={field} rowId={rowId} cellHeight={contentHeight} />
         )}
       </div>
-      {/* Vertical fade indicator for overflow content */}
+      {/* Vertical fade indicator for overflow content.
+          Fades to var(--mt-row-bg) so row-level colorBy tint shows through instead of hardcoded white. */}
       {showVerticalFade && (
         <div
           style={{
@@ -332,7 +333,7 @@ export function GridCell({ rowId, field, value, row, customRenderer, align, onSa
             left: 0,
             right: showHorizontalFade ? (isCompact ? '14px' : '20px') : 0,
             height: isCompact ? '14px' : '20px',
-            background: `linear-gradient(to bottom, transparent, ${isCellMatch ? '#fef9c3' : 'white'})`,
+            background: `linear-gradient(to bottom, transparent, ${isCellMatch ? '#fef9c3' : 'var(--mt-row-bg, white)'})`,
             pointerEvents: 'none',
           }}
         />
@@ -346,7 +347,7 @@ export function GridCell({ rowId, field, value, row, customRenderer, align, onSa
             right: 0,
             bottom: showVerticalFade ? (isCompact ? '14px' : '20px') : 0,
             width: isCompact ? '16px' : '24px',
-            background: `linear-gradient(to right, transparent, ${isCellMatch ? '#fef9c3' : 'white'})`,
+            background: `linear-gradient(to right, transparent, ${isCellMatch ? '#fef9c3' : 'var(--mt-row-bg, white)'})`,
             pointerEvents: 'none',
           }}
         />

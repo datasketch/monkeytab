@@ -181,6 +181,26 @@ interface GridProps {
   loading?: boolean;
   /** Show faint ghost rows/columns to fill the viewport, spreadsheet-style */
   ghostGrid?: boolean | { rows?: number; columns?: number };
+  /** Column sizing strategy — 'auto' (default) fits content, 'fill' distributes width, 'fixed' uses 180px */
+  columnFit?: 'auto' | 'fill' | 'fixed';
+  /** Min column width in 'auto' mode (default: 60) */
+  autoFitMin?: number;
+  /** Max column width in 'auto' mode (default: 320) */
+  autoFitMax?: number;
+  /** Field ID to group rows by (single column) */
+  groupBy?: string | null;
+  /** Default collapsed state for groups (default: false = expanded) */
+  groupCollapsed?: boolean;
+  /** Called when user changes grouping via column header menu */
+  onGroupByChange?: (fieldId: string | null) => void;
+  /** Group display order */
+  groupOrder?: 'auto' | 'asc' | 'desc' | 'count-asc' | 'count-desc' | string[];
+  /** Field ID whose value determines each row's background tint */
+  colorBy?: string | null;
+  /** Called when user changes coloring via column header menu */
+  onColorByChange?: (fieldId: string | null) => void;
+  /** Optional per-value color overrides */
+  colorByMap?: Record<string, string>;
 }
 
 export function Grid({
@@ -218,6 +238,16 @@ export function Grid({
   onUpload,
   loading = false,
   ghostGrid,
+  columnFit,
+  autoFitMin = 60,
+  autoFitMax = 320,
+  groupBy,
+  groupCollapsed = false,
+  onGroupByChange,
+  groupOrder = 'auto',
+  colorBy,
+  onColorByChange,
+  colorByMap,
 }: GridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const searchQuery = useSearchQuery();
@@ -676,6 +706,122 @@ export function Grid({
     document.addEventListener('mouseup', handleMouseUp);
   }, [rowIds, rows, onCellSave]);
 
+  const isFixedHeight = rowHeight !== 'fit';
+  const heightMap = isCompact ? COMPACT_ROW_HEIGHTS : ROW_HEIGHTS;
+  const cellHeight = isFixedHeight ? heightMap[rowHeight] : (isCompact ? 28 : 44); // fallback minHeight for fit mode
+
+  // 'fill' mode: distribute available container width evenly across visible columns
+  const fillWidth = useMemo(() => {
+    if (columnFit !== 'fill' || containerSize.width <= 0) return null;
+    const actionsColWidth = showRowNumbers ? 70 : 50;
+    const visibleCount = table.fields.filter(f => columnVisibility[f.id] !== false).length;
+    if (visibleCount === 0) return null;
+    return Math.max(80, Math.floor((containerSize.width - actionsColWidth) / visibleCount));
+  }, [columnFit, containerSize.width, table.fields, columnVisibility, showRowNumbers]);
+
+  // 'auto' mode: size each column to fit the widest content (header + data values)
+  // Uses canvas measureText for real pixel width + type-aware rules for non-text renderers.
+  const autoFitWidths = useMemo(() => {
+    if (columnFit === 'fill' || columnFit === 'fixed') return null;
+    if (typeof document === 'undefined') return null; // SSR guard
+
+    // Create offscreen canvas for text measurement.
+    // Guard against jsdom (which throws "Not implemented" on getContext).
+    let ctx: CanvasRenderingContext2D | null = null;
+    try {
+      const canvas = document.createElement('canvas');
+      ctx = canvas.getContext('2d');
+    } catch {
+      return null;
+    }
+    if (!ctx) return null;
+
+    const fontSize = isCompact ? 12 : 14;
+    const cellFont = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+    const headerFont = `600 ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+
+    // Chrome constants (measured from actual component styles)
+    // Header: drag handle (22) + content padding (12) + type icon+gap (20) + menu button (22) + resize handle (5) + fade buffer (12)
+    const HEADER_CHROME = isCompact ? 80 : 93;
+    const CELL_PADDING = isCompact ? 20 : 32; // horizontal padding + borders
+
+    // Type-specific minimum widths (for non-text renderers)
+    const THUMBNAIL_SIZE = cellHeight; // images render as square thumbnails at row height
+    const TYPE_MIN_WIDTH: Partial<Record<string, number>> = {
+      Image: THUMBNAIL_SIZE + CELL_PADDING,
+      Attachment: THUMBNAIL_SIZE + CELL_PADDING,
+      Audio: 180, // audio player needs room
+      Video: 180,
+      Boolean: 60, // just an icon
+      Rating: 140, // 5 stars
+      Color: 140, // swatch + hex value
+      Date: 120,
+    };
+
+    // Types that render strings differently than the raw value
+    const STRING_RENDERED_TYPES = new Set(['Text', 'Number', 'Email', 'URL', 'Phone', 'Computed']);
+
+    const widths: Record<string, number> = {};
+    for (const field of table.fields) {
+      // Header width: type icon + label + menu + sort indicator
+      ctx.font = headerFont;
+      const headerTextW = ctx.measureText(field.label).width;
+      const headerW = Math.ceil(headerTextW) + HEADER_CHROME;
+
+      // Data width: depends on field type
+      let dataW = 0;
+
+      const typeMinW = TYPE_MIN_WIDTH[field.type];
+      if (typeMinW) {
+        // Type has a minimum based on its rendering (thumbnail, icon, pill, etc.)
+        dataW = typeMinW;
+      }
+
+      if (STRING_RENDERED_TYPES.has(field.type)) {
+        // Measure the widest string value
+        ctx.font = cellFont;
+        let maxTextW = 0;
+        const sampleSize = Math.min(rows.length, 200); // cap samples for perf
+        for (let i = 0; i < sampleSize; i++) {
+          const val = rows[i].fields[field.id];
+          if (val == null) continue;
+          const str = typeof val === 'string' ? val : String(val);
+          const w = ctx.measureText(str).width;
+          if (w > maxTextW) maxTextW = w;
+        }
+        dataW = Math.max(dataW, Math.ceil(maxTextW) + CELL_PADDING);
+      } else if (field.type === 'SingleSelect' || field.type === 'MultiSelect') {
+        // Pills: measure the widest option value with pill padding
+        ctx.font = cellFont;
+        let maxTextW = 0;
+        const sampleSize = Math.min(rows.length, 200);
+        for (let i = 0; i < sampleSize; i++) {
+          const val = rows[i].fields[field.id];
+          if (val == null) continue;
+          const values = Array.isArray(val) ? val : [val];
+          for (const v of values) {
+            const w = ctx.measureText(String(v)).width;
+            if (w > maxTextW) maxTextW = w;
+          }
+        }
+        // Pill has internal padding (~16px) + cell padding
+        dataW = Math.max(dataW, Math.ceil(maxTextW) + 16 + CELL_PADDING);
+      } else if (field.type === 'Date') {
+        // Dates render in a fixed format
+        ctx.font = cellFont;
+        const sampleW = ctx.measureText('2024-12-31 14:30').width;
+        dataW = Math.max(dataW, Math.ceil(sampleW) + CELL_PADDING);
+      }
+
+      // Take the larger of header vs data, clamp to sensible bounds
+      // Per-column min/max override the global autoFitMin/autoFitMax
+      const minW = columnMinWidth?.[field.id] ?? autoFitMin;
+      const maxW = columnMaxWidth?.[field.id] ?? autoFitMax;
+      widths[field.id] = Math.max(minW, Math.min(maxW, Math.max(headerW, dataW)));
+    }
+    return widths;
+  }, [columnFit, table.fields, rows, isCompact, cellHeight, columnMinWidth, columnMaxWidth, autoFitMin, autoFitMax]);
+
   const columns = useMemo(() => {
     const helper = createColumnHelper<Row>();
 
@@ -701,7 +847,7 @@ export function Grid({
         ),
         cell: () => null, // We render cells directly
         sortingFn: 'auto',
-        size: columnSizing[field.id] || columnWidth?.[field.id] || 180,
+        size: columnSizing[field.id] || columnWidth?.[field.id] || autoFitWidths?.[field.id] || fillWidth || 180,
         minSize: columnMinWidth?.[field.id] ?? 80,
         maxSize: columnMaxWidth?.[field.id] ?? 600,
       })
@@ -718,6 +864,8 @@ export function Grid({
     handleSort,
     handleHide,
     columnSizing,
+    autoFitWidths,
+    fillWidth,
   ]);
 
   const reactTable = useReactTable({
@@ -740,10 +888,6 @@ export function Grid({
     enableColumnResizing: true,
   });
 
-  const isFixedHeight = rowHeight !== 'fit';
-  const heightMap = isCompact ? COMPACT_ROW_HEIGHTS : ROW_HEIGHTS;
-  const cellHeight = isFixedHeight ? heightMap[rowHeight] : (isCompact ? 28 : 44); // fallback minHeight for fit mode
-
   // Ordered rows for rendering (respects drag-and-drop row order)
   const orderedRows = useMemo(() =>
     rowOrder
@@ -752,11 +896,133 @@ export function Grid({
     [rowOrder, reactTable.getRowModel().rows],
   );
 
+  // ── Grouping ──────────────────────────────────────────────────────────
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set(
+    // If groupCollapsed is true, start with all groups collapsed (lazily populated on first render)
+  ));
+
+  // ── Row coloring ──────────────────────────────────────────────────────
+  // Build a value → color map from the colorBy field's options
+  const rowColorMap = useMemo(() => {
+    if (!colorBy) return null;
+    const field = table.fields.find(f => f.id === colorBy);
+    if (!field) return null;
+
+    const map: Record<string, string> = {};
+    // SingleSelect / MultiSelect: read colors from options
+    if ((field.type === 'SingleSelect' || field.type === 'MultiSelect') && field.options && 'options' in field.options) {
+      const opts = (field.options as { options: Array<{ value: string; color?: string }> }).options;
+      for (const opt of opts) {
+        if (opt.color) map[opt.value] = opt.color;
+      }
+    }
+    // Boolean: sensible defaults (pastel green/red)
+    if (field.type === 'Boolean') {
+      map['true'] = '#dcfce7';
+      map['false'] = '#fee2e2';
+    }
+    // Apply user overrides
+    if (colorByMap) Object.assign(map, colorByMap);
+    return map;
+  }, [colorBy, table.fields, colorByMap]);
+
+  const getRowColor = useCallback((row: Row): string | undefined => {
+    if (!colorBy || !rowColorMap) return undefined;
+    const val = row.fields[colorBy];
+    if (val == null) return undefined;
+    // MultiSelect: use the first value's color
+    const key = Array.isArray(val) ? String(val[0]) : String(val);
+    return rowColorMap[key];
+  }, [colorBy, rowColorMap]);
+
+  type RenderItem =
+    | { type: 'group-header'; groupValue: string; count: number; fieldId: string; rowIds: string[] }
+    | { type: 'row'; row: typeof orderedRows[number]; originalIndex: number };
+
+  const renderItems: RenderItem[] = useMemo(() => {
+    if (!groupBy) return orderedRows.map((row, i) => ({ type: 'row' as const, row, originalIndex: i }));
+
+    const groups = new Map<string, typeof orderedRows>();
+    for (const row of orderedRows) {
+      const val = String(row.original.fields[groupBy] ?? '');
+      const key = val || '(empty)';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(row);
+    }
+
+    // On first render with groupCollapsed=true, collapse all
+    if (groupCollapsed && collapsedGroups.size === 0 && groups.size > 0) {
+      setCollapsedGroups(new Set(groups.keys()));
+    }
+
+    // Order the groups according to groupOrder
+    let orderedKeys = Array.from(groups.keys());
+    if (Array.isArray(groupOrder)) {
+      // Explicit list — put listed values first in the given order, then the rest (insertion order)
+      const priority = new Map(groupOrder.map((v, i) => [v, i]));
+      orderedKeys.sort((a, b) => {
+        const ai = priority.has(a) ? priority.get(a)! : Infinity;
+        const bi = priority.has(b) ? priority.get(b)! : Infinity;
+        if (ai !== bi) return ai - bi;
+        return a.localeCompare(b);
+      });
+    } else if (groupOrder === 'asc') {
+      orderedKeys.sort((a, b) => a.localeCompare(b));
+    } else if (groupOrder === 'desc') {
+      orderedKeys.sort((a, b) => b.localeCompare(a));
+    } else if (groupOrder === 'count-desc') {
+      orderedKeys.sort((a, b) => groups.get(b)!.length - groups.get(a)!.length);
+    } else if (groupOrder === 'count-asc') {
+      orderedKeys.sort((a, b) => groups.get(a)!.length - groups.get(b)!.length);
+    } else {
+      // 'auto' — use SingleSelect/MultiSelect option order when available
+      const field = table.fields.find(f => f.id === groupBy);
+      if (field && (field.type === 'SingleSelect' || field.type === 'MultiSelect') && field.options && 'options' in field.options) {
+        const opts = (field.options as { options: Array<{ value: string }> }).options;
+        const priority = new Map(opts.map((o, i) => [o.value, i]));
+        orderedKeys.sort((a, b) => {
+          const ai = priority.has(a) ? priority.get(a)! : Infinity;
+          const bi = priority.has(b) ? priority.get(b)! : Infinity;
+          if (ai !== bi) return ai - bi;
+          return a.localeCompare(b);
+        });
+      } else {
+        // Fallback for non-select fields: alphabetical
+        orderedKeys.sort((a, b) => a.localeCompare(b));
+      }
+    }
+
+    const items: RenderItem[] = [];
+    for (const value of orderedKeys) {
+      const groupRows = groups.get(value)!;
+      items.push({
+        type: 'group-header',
+        groupValue: value,
+        count: groupRows.length,
+        fieldId: groupBy,
+        rowIds: groupRows.map(r => r.original.id),
+      });
+      if (!collapsedGroups.has(value)) {
+        items.push(...groupRows.map((row, i) => ({ type: 'row' as const, row, originalIndex: i })));
+      }
+    }
+    return items;
+  }, [orderedRows, groupBy, collapsedGroups, groupCollapsed, groupOrder, table.fields]);
+
+  const toggleGroup = useCallback((groupValue: string) => {
+    setCollapsedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupValue)) next.delete(groupValue);
+      else next.add(groupValue);
+      return next;
+    });
+  }, []);
+
   // Virtual row rendering for performance with large datasets
   const rowVirtualizer = useVirtualizer({
-    count: orderedRows.length,
+    count: renderItems.length,
     getScrollElement: () => containerRef.current,
-    estimateSize: () => cellHeight,
+    estimateSize: (index) => renderItems[index]?.type === 'group-header' ? 36 : cellHeight,
     overscan: 20,
   });
 
@@ -772,7 +1038,7 @@ export function Grid({
       ? containerSize.height
       : (typeof window !== 'undefined' ? window.innerHeight * 0.6 : 400);
     const headerHeight = 44;
-    const dataHeight = orderedRows.length * cellHeight;
+    const dataHeight = renderItems.length * cellHeight;
     const availableHeight = effectiveHeight - headerHeight;
     // Always show at least a few ghost rows to fill the visible area
     const ghostRows = Math.max(3, Math.ceil((availableHeight - dataHeight) / cellHeight));
@@ -792,7 +1058,7 @@ export function Grid({
     const ghostCols = Math.max(0, Math.ceil((effectiveWidth - usedWidth) / defaultGhostColWidth));
 
     return { rows: ghostRows, columns: ghostCols };
-  }, [ghostGrid, containerSize, orderedRows.length, cellHeight, table.fields, columnVisibility, columnSizing, columnWidth, showRowNumbers]);
+  }, [ghostGrid, containerSize, renderItems.length, cellHeight, table.fields, columnVisibility, columnSizing, columnWidth, showRowNumbers]);
 
   const navigate = useCallback(
     (direction: 'up' | 'down' | 'left' | 'right', extend = false) => {
@@ -1334,7 +1600,60 @@ export function Grid({
             </tr>
           )}
           {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-              const row = orderedRows[virtualRow.index];
+              const item = renderItems[virtualRow.index];
+
+              // ── Group header row ──
+              if (item.type === 'group-header') {
+                const totalCols = (showRowNumbers ? 1 : 1) + table.fields.filter(f => columnVisibility[f.id] !== false).length + ghostCounts.columns;
+                const isCollapsed = collapsedGroups.has(item.groupValue);
+                const allSelected = item.rowIds.every(id => selectedRows.has(id));
+                const someSelected = !allSelected && item.rowIds.some(id => selectedRows.has(id));
+                return (
+                  <tr
+                    key={`group-${item.groupValue}`}
+                    data-index={virtualRow.index}
+                    style={{ background: '#f3f4f6', borderBottom: '2px solid #e5e7eb' }}
+                  >
+                    <td
+                      colSpan={totalCols + 1}
+                      style={{ padding: '6px 12px', fontSize: '13px', fontWeight: 600, color: '#374151' }}
+                    >
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                        <input
+                          type="checkbox"
+                          checked={allSelected}
+                          ref={(el) => { if (el) el.indeterminate = someSelected; }}
+                          onChange={() => {
+                            setSelectedRows((prev) => {
+                              const next = new Set(prev);
+                              if (allSelected) {
+                                item.rowIds.forEach(id => next.delete(id));
+                              } else {
+                                item.rowIds.forEach(id => next.add(id));
+                              }
+                              return next;
+                            });
+                          }}
+                          style={{ cursor: 'pointer' }}
+                        />
+                        <span
+                          onClick={() => toggleGroup(item.groupValue)}
+                          style={{ cursor: 'pointer', userSelect: 'none' }}
+                        >
+                          {isCollapsed ? '▶' : '▼'}{' '}
+                          {item.groupValue}
+                        </span>
+                        <span style={{ color: '#9ca3af', fontWeight: 400, fontSize: '12px' }}>
+                          ({item.count})
+                        </span>
+                      </span>
+                    </td>
+                  </tr>
+                );
+              }
+
+              // ── Regular data row ──
+              const row = item.row;
               const rowIndex = virtualRow.index;
               const rowId = row.original.id;
               const isDragOverThis = dragOverRow === rowId;
@@ -1355,17 +1674,24 @@ export function Grid({
                     e.preventDefault();
                     handleRowDragEnd();
                   }}
-                  style={{
-                    position: 'relative',
-                    ...(onRowClick && { cursor: 'pointer' }),
-                    ...(isFixedHeight && {
-                      height: cellHeight,
-                      maxHeight: cellHeight,
-                    }),
-                    ...(searchQuery && {
-                      background: '#fefce8',
-                    }),
-                  }}
+                  style={(() => {
+                    const rowColor = getRowColor(row.original);
+                    const softened = rowColor ? `color-mix(in srgb, ${rowColor} 30%, white)` : null;
+                    // Effective background: search highlight > row color > white
+                    const effectiveBg = searchQuery ? '#fefce8' : (softened ?? 'white');
+                    return {
+                      position: 'relative',
+                      ...(onRowClick && { cursor: 'pointer' }),
+                      ...(isFixedHeight && {
+                        height: cellHeight,
+                        maxHeight: cellHeight,
+                      }),
+                      ...(softened && { background: softened }),
+                      ...(searchQuery && { background: '#fefce8' }),
+                      // Expose the effective row background so cell fade gradients blend into it
+                      ['--mt-row-bg' as any]: effectiveBg,
+                    };
+                  })()}
                 >
                   {/* Drop indicator - before row */}
                   {showDropBefore && (
@@ -1557,6 +1883,10 @@ export function Grid({
           onColumnChangeType={onColumnChangeType}
           onColumnValidateType={onColumnValidateType}
           columnEditable={columnEditable}
+          onGroupByChange={onGroupByChange}
+          groupBy={groupBy}
+          onColorByChange={onColorByChange}
+          colorBy={colorBy}
         />
       )}
     </div>
@@ -1587,6 +1917,10 @@ function GridContextMenu({
   onColumnChangeType,
   onColumnValidateType,
   columnEditable,
+  onGroupByChange,
+  groupBy,
+  onColorByChange,
+  colorBy,
 }: {
   x: number;
   y: number;
@@ -1609,6 +1943,10 @@ function GridContextMenu({
   onSort?: (fieldId: string, direction: 'asc' | 'desc' | null) => void;
   sortDirection?: 'asc' | 'desc' | null;
   onColumnChangeType?: (fieldId: string, newType: FieldType) => void;
+  onGroupByChange?: (fieldId: string | null) => void;
+  groupBy?: string | null;
+  onColorByChange?: (fieldId: string | null) => void;
+  colorBy?: string | null;
   onColumnValidateType?: (fieldId: string, newType: FieldType) => Promise<{
     compatible: number;
     incompatible: number;
@@ -1741,6 +2079,22 @@ function GridContextMenu({
       items.push({ label: t(sortLabelKey(field.type, 'desc') as any), action: () => { onSort(target.fieldId, 'desc'); onClose(); } });
       if (sortDirection) {
         items.push({ label: t('column.sortNone' as any), action: () => { onSort(target.fieldId, null); onClose(); } });
+      }
+    }
+    if (onGroupByChange) {
+      items.push({ divider: true });
+      if (groupBy === target.fieldId) {
+        items.push({ label: 'Remove grouping', action: () => { onGroupByChange(null); onClose(); } });
+      } else {
+        items.push({ label: 'Group by this column', action: () => { onGroupByChange(target.fieldId); onClose(); } });
+      }
+    }
+    if (onColorByChange && field) {
+      const colorable = field.type === 'SingleSelect' || field.type === 'MultiSelect' || field.type === 'Boolean';
+      if (colorBy === target.fieldId) {
+        items.push({ label: 'Remove row coloring', action: () => { onColorByChange(null); onClose(); } });
+      } else if (colorable) {
+        items.push({ label: 'Color rows by this column', action: () => { onColorByChange(target.fieldId); onClose(); } });
       }
     }
     if (onColumnHide) {

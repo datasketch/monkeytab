@@ -5,8 +5,7 @@ const linkStyle = {
   color: '#2563eb',
   textDecoration: 'none',
   whiteSpace: 'nowrap' as const,
-  overflow: 'hidden' as const,
-  textOverflow: 'ellipsis' as const,
+  // Overflow handled by the parent GridCell's fade gradient, not ellipsis.
   display: 'block' as const,
 };
 

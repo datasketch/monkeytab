@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-04-16
+
+### New
+- **`selectionActions` render prop** — Custom bulk-action buttons in the toolbar when rows are selected.
+- **Row grouping** — `groupBy` / `groupCollapsed` / `onGroupByChange` with collapsible headers, row counts, and select-all-in-group checkboxes. Context menu adds "Group by this column".
+- **`groupOrder` prop** — Control group display order: `'auto'` (default, uses SingleSelect option order), `'asc'`, `'desc'`, `'count-asc'`, `'count-desc'`, or explicit `string[]`.
+- **Row coloring** — `colorBy` / `onColorByChange` / `colorByMap` tints rows by a field value. Uses SingleSelect option colors and Boolean defaults (pastel green/red).
+- **`columnFit` prop** — `'auto'` (new default, sizes to content), `'fill'` (distributes container width), `'fixed'` (180px per column).
+- **`autoFitMin` / `autoFitMax`** — Tune auto column-width bounds (defaults 60 / 320).
+
+### Changed
+- Default column width is now content-aware (`columnFit="auto"`) instead of fixed 180px.
+- Cell overflow fade inherits the row's background color instead of always fading to white.
+- Column header type icon auto-hides when the column is too narrow to show it with the label.
+
+### Fixed
+- Horizontal overflow when tables are inside flex parents (side-by-side panels).
+- Email / URL / Phone cells now fade like other types instead of showing `...` ellipsis.
+
 ## [0.2.1] — 2026-04-15
 
 ### New
@@ -75,6 +94,7 @@ First public release.
 - `onUpload` prop — bring your own file upload (S3, Cloudinary, etc.)
 - Drag-and-drop and paste support for Image cells
 
-[Unreleased]: https://github.com/datasketch/monkeytab/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/datasketch/monkeytab/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/datasketch/monkeytab/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/datasketch/monkeytab/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/datasketch/monkeytab/releases/tag/v0.2.0

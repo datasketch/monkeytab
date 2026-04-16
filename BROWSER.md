@@ -60,6 +60,29 @@ function App() {
 | `sortDirection` | `'asc' \| 'desc' \| null` | — | Controlled sort direction |
 | `onSortChange` | `(fieldId, direction) => void` | — | Fires when user changes sort. Use for server-side sorting. |
 
+### Selection Actions
+
+| Prop | Type | Default | Description |
+|---|---|---|---|
+| `selectionActions` | `(ids: string[], clear: () => void) => ReactNode` | — | Render prop for custom bulk actions when rows are selected |
+
+### Grouping
+
+| Prop | Type | Default | Description |
+|---|---|---|---|
+| `groupBy` | `string \| null` | — | Field ID to group rows by. Omit for no grouping |
+| `groupCollapsed` | `boolean` | `false` | Start groups collapsed |
+| `onGroupByChange` | `(fieldId: string \| null) => void` | — | Fires when user changes grouping via column menu |
+| `groupOrder` | `'auto' \| 'asc' \| 'desc' \| 'count-asc' \| 'count-desc' \| string[]` | `'auto'` | Group display order. `'auto'` uses SingleSelect option order, or alphabetical |
+
+### Row Coloring
+
+| Prop | Type | Default | Description |
+|---|---|---|---|
+| `colorBy` | `string \| null` | — | Field ID whose value tints each row (SingleSelect colors, Boolean green/red) |
+| `onColorByChange` | `(fieldId: string \| null) => void` | — | Fires when user changes coloring via column menu |
+| `colorByMap` | `Record<string, string>` | — | Optional per-value color overrides |
+
 ### Pagination
 
 | Prop | Type | Default | Description |
@@ -77,6 +100,9 @@ function App() {
 |---|---|---|---|
 | `height` | `'auto' \| number \| string` | `'100%'` | `'auto'` fits content, number = fixed pixels (ghost rows on), string = CSS |
 | `maxHeight` | `number` | — | Max height in px. Caps `'auto'` growth or fluid containers |
+| `columnFit` | `'auto' \| 'fill' \| 'fixed'` | `'auto'` | `'auto'` fits content, `'fill'` distributes container width, `'fixed'` uses 180px per column |
+| `autoFitMin` | `number` | `60` | Minimum column width in `'auto'` mode |
+| `autoFitMax` | `number` | `320` | Maximum column width in `'auto'` mode |
 | `rowHeight` | `RowHeightOption` | `'medium'` | `'short'` \| `'medium'` \| `'tall'` \| `'extra-tall'` \| `'fit'` |
 | `showRowNumbers` | `boolean` | `false` | Show row number column |
 | `compactMode` | `boolean` | `false` | Denser layout — smaller fonts, tighter padding |

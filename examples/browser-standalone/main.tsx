@@ -581,6 +581,8 @@ function App() {
   const [sortBy, setSortBy] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc' | null>(null);
   const [ghostGrid, setGhostGrid] = useState(true);
+  const [groupBy, setGroupBy] = useState<string | null>(null);
+  const [colorBy, setColorBy] = useState<string | null>(null);
 
   const locale = language === 'es' ? 'es-CO' : 'en-US';
 
@@ -630,6 +632,33 @@ function App() {
             <input type="checkbox" checked={ghostGrid} onChange={(e) => setGhostGrid(e.target.checked)} />
             Ghost grid
           </label>
+          <label style={{ fontSize: '14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            Group:
+            <select
+              value={groupBy ?? ''}
+              onChange={(e) => setGroupBy(e.target.value || null)}
+              style={{ padding: '2px 6px', fontSize: '13px', borderRadius: '4px', border: '1px solid #d1d5db' }}
+            >
+              <option value="">None</option>
+              <option value="Role">Role</option>
+              <option value="Active">Active</option>
+            </select>
+          </label>
+          <label style={{ fontSize: '14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            Color:
+            <select
+              value={colorBy ?? ''}
+              onChange={(e) => setColorBy(e.target.value || null)}
+              style={{ padding: '2px 6px', fontSize: '13px', borderRadius: '4px', border: '1px solid #d1d5db' }}
+            >
+              <option value="">None</option>
+              {COLUMNS
+                .filter((c) => c.type === 'SingleSelect' || c.type === 'MultiSelect' || c.type === 'Boolean')
+                .map((c) => (
+                  <option key={c.id} value={c.id}>{c.id}</option>
+                ))}
+            </select>
+          </label>
           {tab === 'editable' && (
             <>
               <span style={{ fontSize: '14px', color: '#6b7280' }}>
@@ -677,6 +706,27 @@ function App() {
                   await new Promise(r => setTimeout(r, 1000));
                   return URL.createObjectURL(file);
                 }}
+                groupBy={groupBy}
+                onGroupByChange={setGroupBy}
+                colorBy={colorBy}
+                onColorByChange={setColorBy}
+                selectionActions={(ids, clear) => (
+                  <button
+                    onClick={() => { alert(`Processing ${ids.length} rows: ${ids.join(', ')}`); clear(); }}
+                    style={{
+                      padding: '4px 8px',
+                      background: '#dbeafe',
+                      color: '#1d4ed8',
+                      border: 'none',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Process
+                  </button>
+                )}
               />
             </div>
             {log.length > 0 && (
