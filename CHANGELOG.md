@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-04-18
+
+### New
+- **Async CRUD hooks** — `onRowCreate`, `onCellSave`, `onRowDelete` props on `<MonkeyTable>`. Return a promise to persist to your backend; optimistic updates roll back automatically on reject. `onHookError`, `errorToast`, and `showCellSaveStatus` control failure UX. Required columns (`required: true`) show a red asterisk + red left border.
+- **Draft row lifecycle** — "Add row" creates a local-only draft; promoted via `onRowCreate` once required fields are filled. Unfilled required cells block promotion.
+- **Realtime multiplayer** — Transport-agnostic multiplayer built on three primitives: `MonkeyTableHandle.applyRemoteChange` (imperative ref for applying remote edits), `useMonkeyTabSync` hook (subscribe your transport to local changes), and `presence` prop (renders a `PresenceBar` + cell cursor outlines). `onActiveCellChange` broadcasts your cursor. Bring your own WebSocket / BroadcastChannel / whatever.
+- **Column-lifecycle callbacks** — `onColumnRename`, `onColumnDelete`, `onColumnCreate`, `onColumnChangeType`, `onColumnUpdateOptions`. Each gates its matching header-menu entry (provide the hook, get the UI). Schema-side counterpart to the row CRUD hooks.
+- **Rich-text popup** — Write/Preview toggle, B / I / Code / Link / Strike toolbar, ⌘/Ctrl+B/I/E/K shortcuts for Text cells. New `textPopup` prop for global popup sizing; per-column `popupWidth` / `popupMinHeight` / `popupMaxHeight` overrides.
+- **Grouped add-row** — "+ Add row" button per group header, inheriting the group's values.
+- **Column header double-click rename.**
+- **`rowKey` prop** — custom row identity function for clients whose rows don't have a stable `id`.
+
+### Changed
+- Native `confirm()` replaced with a styled `ConfirmDialog` everywhere — fixes a double-confirm when `confirmBeforeDelete` is on.
+- Toolbar "Add Row" hides while rows are selected to prevent misclicks next to bulk actions.
+
+### Fixed
+- Select field option shape in docs — was `{ choices: [...] }`, should be `{ options: [{ value, label, color? }] }`.
+
 ## [0.3.0] — 2026-04-16
 
 ### New
@@ -94,7 +113,8 @@ First public release.
 - `onUpload` prop — bring your own file upload (S3, Cloudinary, etc.)
 - Drag-and-drop and paste support for Image cells
 
-[Unreleased]: https://github.com/datasketch/monkeytab/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/datasketch/monkeytab/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/datasketch/monkeytab/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/datasketch/monkeytab/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/datasketch/monkeytab/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/datasketch/monkeytab/releases/tag/v0.2.0

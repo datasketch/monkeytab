@@ -11,7 +11,8 @@
  *   />
  */
 
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { forwardRef, useState, useEffect, useRef, useCallback, useImperativeHandle, useMemo } from 'react';
+import type { ForwardedRef } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryAdapter } from '@monkeytab/adapter-memory';
 import type {
@@ -24,13 +25,21 @@ import type {
   BaseSpec,
   FunctionDef,
   FieldTypeConstraint,
+  PresenceUser,
+  QueryResult,
+  RemoteChangeEvent,
 } from '@monkeytab/core';
 import { functionRegistry, constraintRegistry } from '@monkeytab/core';
 import { MonkeyTabClientProvider } from '../ui/client/ClientContext.tsx';
+import { CrudHooksProvider, type CrudHooks } from '../ui/client/CrudHooksContext.tsx';
+import { PresenceProvider } from '../ui/client/PresenceContext.tsx';
+import { PresenceBar } from '../ui/components/PresenceBar.tsx';
+import { ActiveCellBridge } from '../ui/components/grid/ActiveCellBridge.tsx';
 import { GridStoreProvider } from '../ui/state/GridStoreContext.tsx';
 import { I18nProvider, type I18nStrings } from '../ui/i18n/index.ts';
 import { registerDefaults } from '../ui/registry/defaults.ts';
 import { componentRegistry, type CellRenderer as RegistryCellRenderer, type CellEditor } from '../ui/registry/ComponentRegistry.ts';
+import { TextPopupSizeProvider, type TextPopupSize } from '../ui/components/editors/TextPopupContext.tsx';
 import { BrowserClient } from './BrowserClient.ts';
 import { TableView } from './TableView.tsx';
 import type { RowHeightOption, CellRenderer as GridCellRenderer } from '../ui/components/grid/Grid.tsx';
@@ -64,6 +73,9 @@ export interface MonkeyTableColumn {
   sortable?: boolean;
   /** Cell text alignment (default: type-dependent — 'right' for Number, 'left' for others) */
   align?: 'left' | 'center' | 'right';
+  /** When true, Add Row is blocked unless this column has a value.
+   *  Missing = null, undefined, '', or []. `0` and `false` count as present. */
+  required?: boolean;
 }
 
 export interface MonkeyTableProps {
@@ -84,6 +96,40 @@ export interface MonkeyTableProps {
   onRowClick?: (row: Record<string, Value>) => void;
   /** Called when a single cell value changes — fires before the mutation with rowId, fieldId, new and old values */
   onCellChange?: (rowId: string, fieldId: string, newValue: Value, oldValue: Value) => void;
+  /** Called when the active (focused) cell changes via click or keyboard navigation.
+   *  Nulls mean no cell is focused. Useful for broadcasting the local cursor in
+   *  multiplayer presence. */
+  onActiveCellChange?: (rowId: string | null, fieldId: string | null) => void;
+
+  // ── Async CRUD (back a real database) ────────────────────────────────────
+  /** Called when the user adds a row. Return the row's id (and optionally enriched fields
+   *  like DB-assigned timestamps). If this rejects, the pending row is removed. */
+  onRowCreate?: (draft: { fields: Record<string, Value> }) => Promise<{ id: string; fields?: Record<string, Value> }>;
+  /** Called when a cell is edited. Return a Promise that resolves once persisted.
+   *  If it rejects, the UI rolls back to `oldValue`. */
+  onCellSave?: (rowId: string, fieldId: string, newValue: Value, oldValue: Value) => Promise<void>;
+  /** Called when a row is deleted. Return a Promise. If it rejects, the row reappears. */
+  onRowDelete?: (rowId: string) => Promise<void>;
+  /** Called whenever an async CRUD hook rejects. Consumers can wire their own toast/logging here. */
+  onHookError?: (kind: 'create' | 'update' | 'delete', err: unknown) => void;
+  /** Show a minimal built-in toast with the last hook error message (default: false). */
+  errorToast?: boolean;
+  /** Render a per-cell saving indicator (left border) while async hooks are in flight (default: false). */
+  showCellSaveStatus?: boolean;
+
+  // ── Realtime / multiplayer ───────────────────────────────────────────────
+  /** Other users currently viewing/editing this table. Renders a small avatar
+   *  strip above the grid and colored cell outlines at each user's cursor.
+   *  Build this list from your own auth + socket layer. Leave empty / undefined
+   *  for single-user tables (no UI impact). */
+  presence?: PresenceUser[];
+
+  // ── Row identity ─────────────────────────────────────────────────────────
+  /** Controls how MonkeyTable derives the id for each input row.
+   *  - `string` — the row object key to read (e.g. 'uuid', '_id').
+   *  - `(row) => string` — a function that returns the id.
+   *  When omitted, `row.id` is used if present, otherwise a sequential id is generated. */
+  rowKey?: string | ((row: Record<string, Value>) => string);
 
   /** Render prop for custom bulk actions shown when rows are selected.
    *  Receives the selected row IDs and a function to clear the selection. */
@@ -218,6 +264,28 @@ export interface MonkeyTableProps {
   /** Called when a file is selected in file-type editors. Return the permanent URL after uploading. */
   onUpload?: (file: File, fieldType: string) => Promise<string>;
 
+  // ── Text editor popup ────────────────────────────────────────────────────
+  /** Global defaults for the Text column popup editor (multiline / richText / json).
+   *  Accepts numbers (pixels) or CSS length strings (e.g. `'50vw'`, `'60vh'`).
+   *  Per-column `TextFieldOptions.popupWidth/popupMinHeight/popupMaxHeight` override these. */
+  textPopup?: TextPopupSize;
+
+  // ── Column lifecycle ─────────────────────────────────────────────────────
+  // Each hook fires after the internal mutation succeeds. Provide a callback
+  // to enable the matching header-menu entry (or the ghost "+ column" / "Add
+  // field" button for onColumnCreate). Omit a callback to hide its entry.
+  // These are the schema counterparts of the row-level CRUD hooks.
+  /** Fires when the user renames a column. Update your `columns` prop to keep the label in sync. */
+  onColumnRename?: (fieldId: string, newLabel: string, oldLabel: string) => void;
+  /** Fires when the user deletes a column. Remove it from your `columns` prop. */
+  onColumnDelete?: (fieldId: string) => void;
+  /** Fires when the user adds a column (via "+" button, ghost cell, or formula builder). Append it to your `columns` prop. */
+  onColumnCreate?: (field: { id: string; label: string; type: FieldType; options?: FieldOptions }) => void;
+  /** Fires when the user changes a column's field type. */
+  onColumnChangeType?: (fieldId: string, newType: FieldType) => void;
+  /** Fires when the user edits a column's type-specific options (select choices, number format, etc.). */
+  onColumnUpdateOptions?: (fieldId: string, options: FieldOptions) => void;
+
   // ── Registry Extensions ────────────────────────────────────────────────
   /** Custom computed functions — registered on mount, unregistered on unmount */
   functions?: FunctionDef[];
@@ -232,6 +300,12 @@ export interface MonkeyTableProps {
 const BASE_ID = 'base-1';
 const TABLE_ID = 'table-1';
 
+/** Imperative handle exposed via `ref={...}` on `<MonkeyTable>`. */
+export interface MonkeyTableHandle {
+  /** Patch the grid with a change from another user (remote WebSocket, SSE, BroadcastChannel, etc.). */
+  applyRemoteChange: (event: RemoteChangeEvent) => void;
+}
+
 // Chrome heights for auto-height calculation (must match Grid/TableView layout)
 const AUTO_HEIGHT_HEADER = 44;
 const AUTO_HEIGHT_TOOLBAR = 40;
@@ -240,7 +314,7 @@ const AUTO_HEIGHT_CHROME = 2;
 const AUTO_ROW_HEIGHTS: Record<string, number> = { short: 32, medium: 44, tall: 64, 'extra-tall': 88 };
 const AUTO_COMPACT_ROW_HEIGHTS: Record<string, number> = { short: 24, medium: 28, tall: 40, 'extra-tall': 60 };
 
-export function MonkeyTable({
+function MonkeyTableInner({
   // Data
   columns,
   rows: inputRows,
@@ -250,6 +324,18 @@ export function MonkeyTable({
   selectedRowIds,
   onRowClick,
   onCellChange,
+  onActiveCellChange,
+  // Async CRUD
+  onRowCreate,
+  onCellSave,
+  onRowDelete,
+  onHookError,
+  errorToast,
+  showCellSaveStatus,
+  // Realtime / multiplayer
+  presence,
+  // Row identity
+  rowKey,
   selectionActions,
   // Grouping
   groupBy,
@@ -309,12 +395,19 @@ export function MonkeyTable({
   // Advanced
   functionsEndpoint,
   onUpload,
+  textPopup,
+  // Column lifecycle
+  onColumnRename,
+  onColumnDelete,
+  onColumnCreate,
+  onColumnChangeType,
+  onColumnUpdateOptions,
   // Registry extensions
   functions: functionDefs,
   constraints: constraintDefs,
   renderers: rendererOverrides,
   editors: editorOverrides,
-}: MonkeyTableProps) {
+}: MonkeyTableProps, ref: ForwardedRef<MonkeyTableHandle>) {
   // All columns (including hidden) — used for data mapping
   const allColumns = columns;
 
@@ -332,6 +425,7 @@ export function MonkeyTable({
         label: col.label ?? col.id,
         type: col.type ?? 'Text',
         options: col.options,
+        ...(col.required !== undefined ? { required: col.required } : {}),
       })),
     [visibleColumns],
   );
@@ -408,14 +502,25 @@ export function MonkeyTable({
             fieldValues[col.id] = null;
           }
         }
+        // Row identity: rowKey (string or function), then row.id, then fallback.
+        let id: string | null = null;
+        if (typeof rowKey === 'function') {
+          const k = rowKey(row);
+          if (typeof k === 'string' && k) id = k;
+        } else if (typeof rowKey === 'string') {
+          const k = row[rowKey];
+          if (typeof k === 'string' && k) id = k;
+        }
+        if (!id && typeof row.id === 'string' && row.id) id = row.id as string;
+        if (!id) id = `rec-${i + 1}`;
         return {
-          id: `rec-${i + 1}`,
+          id,
           fields: fieldValues,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
       }),
-    [inputRows, allColumns],
+    [inputRows, allColumns, rowKey],
   );
 
   // Create adapter + client once, then seed with data
@@ -675,6 +780,77 @@ export function MonkeyTable({
     return (row: Row) => onRowClick(denormalizeRow(row));
   }, [onRowClick, denormalizeRow]);
 
+  // Built-in error toast state (opt-in via `errorToast`). Auto-dismisses after 3s.
+  const [lastError, setLastError] = useState<string | null>(null);
+  useEffect(() => {
+    if (!lastError) return;
+    const id = setTimeout(() => setLastError(null), 3000);
+    return () => clearTimeout(id);
+  }, [lastError]);
+
+  // Expose imperative `applyRemoteChange` so consumers can patch the grid
+  // from their own realtime transport (WS/SSE/BroadcastChannel).
+  useImperativeHandle(ref, () => ({
+    applyRemoteChange: (event: RemoteChangeEvent) => {
+      const qc = queryClientRef.current;
+      if (!qc) return;
+      qc.setQueriesData<QueryResult>({ queryKey: ['rows'] }, (prev) => {
+        if (!prev) return prev;
+        switch (event.type) {
+          case 'row.created': {
+            if (prev.rows.some((r) => r.id === event.row.id)) return prev;
+            return {
+              ...prev,
+              rows: [...prev.rows, event.row],
+              pagination: { ...prev.pagination, total: prev.pagination.total + 1 },
+            };
+          }
+          case 'row.updated': {
+            let touched = false;
+            const rows = prev.rows.map((row) => {
+              if (row.id !== event.rowId) return row;
+              touched = true;
+              return {
+                ...row,
+                fields: { ...row.fields, ...event.fields },
+                updatedAt: event.updatedAt ?? row.updatedAt,
+              };
+            });
+            if (!touched) return prev;
+            return { ...prev, rows };
+          }
+          case 'row.deleted': {
+            const rows = prev.rows.filter((r) => r.id !== event.rowId);
+            if (rows.length === prev.rows.length) return prev;
+            return {
+              ...prev,
+              rows,
+              pagination: { ...prev.pagination, total: Math.max(0, prev.pagination.total - 1) },
+            };
+          }
+          default:
+            return prev;
+        }
+      });
+    },
+  }), []);
+
+  // Assemble CRUD hooks for the context. Wrap `onHookError` so the built-in toast
+  // (if `errorToast`) updates alongside the consumer's callback.
+  const hooksValue: CrudHooks = useMemo(() => ({
+    onRowCreate,
+    onCellSave,
+    onRowDelete,
+    showCellSaveStatus,
+    onHookError: (kind, err) => {
+      if (errorToast) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setLastError(`${kind}: ${msg}`);
+      }
+      onHookError?.(kind, err);
+    },
+  }), [onRowCreate, onCellSave, onRowDelete, showCellSaveStatus, onHookError, errorToast]);
+
   if (!ready || !clientRef.current || !queryClientRef.current) {
     return (
       <div style={{
@@ -730,14 +906,20 @@ export function MonkeyTable({
     flexDirection: 'column',
     overflow: 'hidden',
     minWidth: 0, // Allow shrinking inside flex parents (prevents horizontal page overflow)
+    position: 'relative', // anchor the optional error toast
   };
 
   return (
     <div style={containerStyle}>
       <QueryClientProvider client={queryClientRef.current}>
         <MonkeyTabClientProvider client={clientRef.current}>
+          <CrudHooksProvider hooks={hooksValue}>
+          <PresenceProvider users={presence ?? []}>
           <I18nProvider overrides={translations}>
+            <TextPopupSizeProvider value={textPopup}>
             <GridStoreProvider>
+              <PresenceBar />
+              {onActiveCellChange && <ActiveCellBridge onActiveCellChange={onActiveCellChange} />}
               <TableView
                 baseId={BASE_ID}
                 tableId={TABLE_ID}
@@ -775,11 +957,43 @@ export function MonkeyTable({
                 colorBy={colorBy}
                 onColorByChange={onColorByChange}
                 colorByMap={colorByMap}
+                onColumnRename={onColumnRename}
+                onColumnDelete={onColumnDelete}
+                onColumnCreate={onColumnCreate}
+                onColumnChangeType={onColumnChangeType}
+                onColumnUpdateOptions={onColumnUpdateOptions}
               />
             </GridStoreProvider>
+            </TextPopupSizeProvider>
           </I18nProvider>
+          </PresenceProvider>
+          </CrudHooksProvider>
         </MonkeyTabClientProvider>
       </QueryClientProvider>
+      {errorToast && lastError && (
+        <div
+          role="status"
+          style={{
+            position: 'absolute',
+            bottom: 12,
+            right: 12,
+            padding: '8px 12px',
+            background: '#fee2e2',
+            color: '#991b1b',
+            border: '1px solid #fecaca',
+            borderRadius: 4,
+            fontSize: 12,
+            maxWidth: 360,
+            boxShadow: '0 1px 3px rgba(0,0,0,0.1)',
+            zIndex: 10,
+          }}
+        >
+          {lastError}
+        </div>
+      )}
     </div>
   );
 }
+
+export const MonkeyTable = forwardRef<MonkeyTableHandle, MonkeyTableProps>(MonkeyTableInner);
+MonkeyTable.displayName = 'MonkeyTable';

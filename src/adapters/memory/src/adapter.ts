@@ -417,13 +417,18 @@ export class MemoryAdapter implements Adapter {
   // Write — Records
   // ===========================================================================
 
-  async createRecord(baseId: string, tableId: string, fields: Record<string, Value>): Promise<Row> {
+  async createRecord(
+    baseId: string,
+    tableId: string,
+    fields: Record<string, Value>,
+    opts?: { id?: string },
+  ): Promise<Row> {
     const table = this.requireTable(baseId, tableId);
     const rows = this.requireRows(baseId, tableId);
 
     const timestamp = this.now();
     const newRow: Row = {
-      id: this.generateId('rec'),
+      id: opts?.id ?? this.generateId('rec'),
       fields,
       createdAt: timestamp,
       updatedAt: timestamp,

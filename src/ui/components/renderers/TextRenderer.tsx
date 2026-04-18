@@ -3,7 +3,7 @@ import type { TextFieldOptions } from '@monkeytab/core';
 import { useI18n } from '../../i18n/index.ts';
 
 // Simple markdown parser for basic formatting
-function parseMarkdown(text: string): React.ReactNode[] {
+export function parseMarkdown(text: string): React.ReactNode[] {
   const nodes: React.ReactNode[] = [];
   let remaining = text;
   let key = 0;

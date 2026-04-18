@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useClient } from '../client/ClientContext.tsx';
+import { useCrudHooks } from '../client/CrudHooksContext.tsx';
 import type { Value, Row, QueryResult, TableSpec, BaseSpec, FieldOptions, FieldType, MonkeyTabSettings, TableDisplaySettings } from '@monkeytab/core';
 
 // =============================================================================
@@ -9,46 +10,53 @@ import type { Value, Row, QueryResult, TableSpec, BaseSpec, FieldOptions, FieldT
 export function useUpdateRecord(baseId: string, tableId: string) {
   const queryClient = useQueryClient();
   const client = useClient();
+  const hooks = useCrudHooks();
 
   return useMutation({
-    mutationFn: async ({ recordId, fieldId, value }: { recordId: string; fieldId: string; value: Value }) => {
+    mutationFn: async ({ recordId, fieldId, value, oldValue }: { recordId: string; fieldId: string; value: Value; oldValue?: Value }) => {
+      // Consumer persists first. Rejection propagates to onError, which rolls back the optimistic write.
+      if (hooks.onCellSave) {
+        await hooks.onCellSave(recordId, fieldId, value, oldValue ?? null);
+      }
       return client.updateRecord({
         baseId,
         tableId,
         recordId,
         fields: { [fieldId]: value },
+        oldValue,
       });
     },
 
     onMutate: async ({ recordId, fieldId, value }) => {
       await queryClient.cancelQueries({ queryKey: ['rows', baseId, tableId] });
 
-      const previousData = queryClient.getQueryData<QueryResult>(['rows', baseId, tableId, 0, 100]);
+      // Snapshot every rows query (any offset/limit/search/filter/sort combination)
+      // so we can roll back on reject.
+      const snapshots = queryClient.getQueriesData<QueryResult>({ queryKey: ['rows', baseId, tableId] });
 
-      if (previousData) {
-        const newRows = previousData.rows.map((row) => {
-          if (row.id === recordId) {
-            return {
-              ...row,
-              fields: { ...row.fields, [fieldId]: value },
-            };
-          }
-          return row;
-        });
+      queryClient.setQueriesData<QueryResult>(
+        { queryKey: ['rows', baseId, tableId] },
+        (prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            rows: prev.rows.map((row) =>
+              row.id === recordId ? { ...row, fields: { ...row.fields, [fieldId]: value } } : row,
+            ),
+          };
+        },
+      );
 
-        queryClient.setQueryData<QueryResult>(['rows', baseId, tableId, 0, 100], {
-          ...previousData,
-          rows: newRows,
-        });
-      }
-
-      return { previousData };
+      return { snapshots };
     },
 
-    onError: (_err, _variables, context) => {
-      if (context?.previousData) {
-        queryClient.setQueryData(['rows', baseId, tableId, 0, 100], context.previousData);
+    onError: (err, _variables, context) => {
+      if (context?.snapshots) {
+        for (const [key, data] of context.snapshots) {
+          queryClient.setQueryData(key, data);
+        }
       }
+      hooks.onHookError?.('update', err);
     },
 
     onSettled: () => {
@@ -60,25 +68,227 @@ export function useUpdateRecord(baseId: string, tableId: string) {
 export function useCreateRecord(baseId: string, tableId: string) {
   const queryClient = useQueryClient();
   const client = useClient();
+  const hooks = useCrudHooks();
 
   return useMutation({
     mutationFn: async (fields: Record<string, Value>) => {
+      // Consumer-backed create: call their hook to get the DB id (and any enriched fields).
+      if (hooks.onRowCreate) {
+        const result = await hooks.onRowCreate({ fields });
+        const mergedFields = { ...fields, ...(result.fields ?? {}) };
+        return client.createRecord({ baseId, tableId, fields: mergedFields, id: result.id });
+      }
       return client.createRecord({ baseId, tableId, fields });
     },
 
-    onSuccess: (newRow) => {
-      // Optimistically append the new row to cache
-      const previousData = queryClient.getQueryData<QueryResult>(['rows', baseId, tableId, 0, 100]);
-      if (previousData && newRow) {
-        queryClient.setQueryData<QueryResult>(['rows', baseId, tableId, 0, 100], {
-          rows: [...previousData.rows, newRow],
-          pagination: {
-            ...previousData.pagination,
-            total: previousData.pagination.total + 1,
-          },
-        });
+    onMutate: async (fields) => {
+      // Required-field guard: any declared required column must have a present value
+      // (not null/undefined/''/[]). Lives here so both route and MonkeyTable paths inherit.
+      const tableSpec = queryClient.getQueryData<TableSpec>(['table', baseId, tableId]);
+      if (tableSpec) {
+        const required = tableSpec.fields.filter((f) => f.required);
+        for (const field of required) {
+          const v = fields[field.id];
+          const missing =
+            v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0);
+          if (missing) {
+            const err = new Error(`Required field missing: ${field.id}`);
+            hooks.onHookError?.('create', err);
+            throw err;
+          }
+        }
       }
+
+      // Optimistic pending row — gives consumers a visual in-flight state.
+      // Only used when onRowCreate is wired; otherwise the adapter path is fast enough
+      // that onSuccess append is indistinguishable from optimistic.
+      if (!hooks.onRowCreate) return { tempId: null as string | null };
+
+      await queryClient.cancelQueries({ queryKey: ['rows', baseId, tableId] });
+      const tempId = `__pending-${Math.random().toString(36).slice(2, 10)}`;
+      const snapshots = queryClient.getQueriesData<QueryResult>({ queryKey: ['rows', baseId, tableId] });
+      const now = new Date().toISOString();
+      const pendingRow: Row = { id: tempId, fields, createdAt: now, updatedAt: now, pending: true };
+      queryClient.setQueriesData<QueryResult>(
+        { queryKey: ['rows', baseId, tableId] },
+        (prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            rows: [...prev.rows, pendingRow],
+            pagination: {
+              ...prev.pagination,
+              total: prev.pagination.total + 1,
+            },
+          };
+        },
+      );
+      return { tempId, snapshots };
+    },
+
+    onSuccess: (newRow, _vars, context) => {
+      if (!newRow) {
+        queryClient.invalidateQueries({ queryKey: ['rows', baseId, tableId] });
+        return;
+      }
+      const tempId = context?.tempId;
+      queryClient.setQueriesData<QueryResult>(
+        { queryKey: ['rows', baseId, tableId] },
+        (prev) => {
+          if (!prev) return prev;
+          if (tempId) {
+            // Swap the temp pending row for the real one
+            return { ...prev, rows: prev.rows.map((r) => (r.id === tempId ? newRow : r)) };
+          }
+          return {
+            ...prev,
+            rows: [...prev.rows, newRow],
+            pagination: {
+              ...prev.pagination,
+              total: prev.pagination.total + 1,
+            },
+          };
+        },
+      );
       queryClient.invalidateQueries({ queryKey: ['rows', baseId, tableId] });
+    },
+
+    onError: (err, _vars, context) => {
+      // Roll back the optimistic pending row if we added one.
+      if (context?.snapshots) {
+        for (const [key, data] of context.snapshots) {
+          queryClient.setQueryData(key, data);
+        }
+      }
+      hooks.onHookError?.('create', err);
+    },
+  });
+}
+
+/**
+ * Add a draft row to the local cache. Does NOT call any consumer hook or adapter.
+ * Used for the Add-row flow when required fields exist or onRowCreate is wired —
+ * the row only gets persisted once the user fills in required fields and a cell edit
+ * triggers promotion via usePromoteDraftRow.
+ */
+export function useCreateDraftRow(baseId: string, tableId: string) {
+  const queryClient = useQueryClient();
+
+  return (fields: Record<string, Value>): string => {
+    const tempId = `__draft-${Math.random().toString(36).slice(2, 10)}`;
+    const now = new Date().toISOString();
+    const draftRow: Row = { id: tempId, fields, createdAt: now, updatedAt: now, draft: true };
+
+    queryClient.setQueriesData<QueryResult>(
+      { queryKey: ['rows', baseId, tableId] },
+      (prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          rows: [...prev.rows, draftRow],
+          pagination: {
+            ...prev.pagination,
+            total: prev.pagination.total + 1,
+          },
+        };
+      },
+    );
+
+    return tempId;
+  };
+}
+
+/**
+ * Promote a draft row: optimistically update its field value, then attempt to
+ * persist via onRowCreate (if wired) or the adapter directly. On required-field
+ * violation, fires onHookError('create', ...) and leaves the row in draft state
+ * with the user's input preserved. On onRowCreate failure, same — the row stays
+ * draft with the user's edits intact.
+ */
+export function usePromoteDraftRow(baseId: string, tableId: string) {
+  const queryClient = useQueryClient();
+  const client = useClient();
+  const hooks = useCrudHooks();
+
+  return useMutation({
+    mutationFn: async ({ rowId, fieldId, value }: { rowId: string; fieldId: string; value: Value }) => {
+      // Merge the incoming cell value with the row's current fields.
+      const rowsQueries = queryClient.getQueriesData<QueryResult>({ queryKey: ['rows', baseId, tableId] });
+      let current: Row | undefined;
+      for (const [, data] of rowsQueries) {
+        if (!data) continue;
+        const found = data.rows.find((r) => r.id === rowId);
+        if (found) { current = found; break; }
+      }
+      const mergedFields: Record<string, Value> = { ...(current?.fields ?? {}), [fieldId]: value };
+
+      // Required-field check — stay draft if any required field is missing.
+      const tableSpec = queryClient.getQueryData<TableSpec>(['table', baseId, tableId]);
+      if (tableSpec) {
+        const missing: string[] = [];
+        for (const field of tableSpec.fields) {
+          if (!field.required) continue;
+          const v = mergedFields[field.id];
+          if (v === null || v === undefined || v === '' || (Array.isArray(v) && v.length === 0)) {
+            missing.push(field.id);
+          }
+        }
+        if (missing.length > 0) {
+          const err = new Error(`Required field${missing.length > 1 ? 's' : ''} missing: ${missing.join(', ')}`);
+          (err as { missingFields?: string[] }).missingFields = missing;
+          throw err;
+        }
+      }
+
+      // All required filled — attempt promotion.
+      if (hooks.onRowCreate) {
+        const result = await hooks.onRowCreate({ fields: mergedFields });
+        const finalFields = { ...mergedFields, ...(result.fields ?? {}) };
+        return client.createRecord({ baseId, tableId, fields: finalFields, id: result.id });
+      }
+      return client.createRecord({ baseId, tableId, fields: mergedFields });
+    },
+
+    onMutate: async ({ rowId, fieldId, value }) => {
+      await queryClient.cancelQueries({ queryKey: ['rows', baseId, tableId] });
+
+      // Optimistically update the draft row's field and mark it pending (if we'll call onRowCreate).
+      // Keep draft:true for now — onSuccess swaps with real row; onError leaves it draft with the edit preserved.
+      queryClient.setQueriesData<QueryResult>(
+        { queryKey: ['rows', baseId, tableId] },
+        (prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            rows: prev.rows.map((row) =>
+              row.id === rowId
+                ? { ...row, fields: { ...row.fields, [fieldId]: value } }
+                : row,
+            ),
+          };
+        },
+      );
+      return {};
+    },
+
+    onSuccess: (newRow, { rowId: tempId }) => {
+      if (!newRow) {
+        queryClient.invalidateQueries({ queryKey: ['rows', baseId, tableId] });
+        return;
+      }
+      queryClient.setQueriesData<QueryResult>(
+        { queryKey: ['rows', baseId, tableId] },
+        (prev) => {
+          if (!prev) return prev;
+          return { ...prev, rows: prev.rows.map((r) => (r.id === tempId ? newRow : r)) };
+        },
+      );
+      queryClient.invalidateQueries({ queryKey: ['rows', baseId, tableId] });
+    },
+
+    onError: (err) => {
+      // Stay draft; user's edit is preserved from onMutate. Just surface the error.
+      hooks.onHookError?.('create', err);
     },
   });
 }
@@ -86,35 +296,46 @@ export function useCreateRecord(baseId: string, tableId: string) {
 export function useDeleteRecord(baseId: string, tableId: string) {
   const queryClient = useQueryClient();
   const client = useClient();
+  const hooks = useCrudHooks();
 
   return useMutation({
     mutationFn: async (recordId: string) => {
+      if (hooks.onRowDelete) {
+        await hooks.onRowDelete(recordId);
+      }
       return client.deleteRecord({ baseId, tableId, recordId });
     },
 
     onMutate: async (recordId) => {
       await queryClient.cancelQueries({ queryKey: ['rows', baseId, tableId] });
 
-      const previousData = queryClient.getQueryData<QueryResult>(['rows', baseId, tableId, 0, 100]);
+      const snapshots = queryClient.getQueriesData<QueryResult>({ queryKey: ['rows', baseId, tableId] });
 
-      if (previousData) {
-        const newRows = previousData.rows.filter((row) => row.id !== recordId);
-        queryClient.setQueryData<QueryResult>(['rows', baseId, tableId, 0, 100], {
-          rows: newRows,
-          pagination: {
-            ...previousData.pagination,
-            total: previousData.pagination.total - 1,
-          },
-        });
-      }
+      queryClient.setQueriesData<QueryResult>(
+        { queryKey: ['rows', baseId, tableId] },
+        (prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            rows: prev.rows.filter((row) => row.id !== recordId),
+            pagination: {
+              ...prev.pagination,
+              total: Math.max(0, prev.pagination.total - 1),
+            },
+          };
+        },
+      );
 
-      return { previousData };
+      return { snapshots };
     },
 
-    onError: (_err, _variables, context) => {
-      if (context?.previousData) {
-        queryClient.setQueryData(['rows', baseId, tableId, 0, 100], context.previousData);
+    onError: (err, _variables, context) => {
+      if (context?.snapshots) {
+        for (const [key, data] of context.snapshots) {
+          queryClient.setQueryData(key, data);
+        }
       }
+      hooks.onHookError?.('delete', err);
     },
 
     onSettled: () => {

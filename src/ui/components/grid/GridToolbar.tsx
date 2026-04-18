@@ -98,8 +98,8 @@ export function GridToolbar({
         marginBottom: '16px',
       }}
     >
-      {/* Add Row button with dropdown */}
-      {onAddRow && (
+      {/* Add Row button with dropdown — hidden while rows are selected to prevent misclicks next to bulk actions */}
+      {onAddRow && selectedCount === 0 && (
         <div ref={addRowMenuRef} style={{ position: 'relative', display: 'flex' }}>
           <button
             onClick={() => onAddRow(1)}

@@ -38,6 +38,12 @@ export interface TextFieldOptions {
   placeholder?: string;
   richText?: boolean;  // Enable markdown rendering
   json?: boolean;      // Render value as formatted JSON
+  /** Popup editor width (pixels or any CSS length string like "50vw"). */
+  popupWidth?: number | string;
+  /** Popup textarea min height (pixels or CSS length). */
+  popupMinHeight?: number | string;
+  /** Popup textarea max height (pixels or CSS length). */
+  popupMaxHeight?: number | string;
 }
 
 export interface NumberFieldOptions {
@@ -187,6 +193,9 @@ export interface FieldSpec {
   label: string;
   type: FieldType;
   options?: FieldOptions;
+  /** When true, a new row cannot be created with this field missing.
+   *  Missing = null, undefined, empty string, or empty array. `0` and `false` count as present. */
+  required?: boolean;
 }
 
 // Helper type to get strongly-typed field with specific options
@@ -195,6 +204,7 @@ export interface TypedFieldSpec<T extends FieldType> {
   label: string;
   type: T;
   options?: FieldTypeOptionsMap[T];
+  required?: boolean;
 }
 
 // =============================================================================
@@ -214,6 +224,13 @@ export interface Row {
   fields: Record<string, Value>;
   createdAt: string;  // ISO 8601
   updatedAt: string;  // ISO 8601
+  /** UI-only transient flag: true while a consumer-supplied async hook is in flight.
+   *  Never persisted by adapters; set by useCreateRecord while onRowCreate is pending. */
+  pending?: boolean;
+  /** UI-only transient flag: true while the row exists only in the local cache
+   *  (user clicked Add but hasn't filled in required fields yet).
+   *  Never persisted by adapters; cleared once onRowCreate resolves. */
+  draft?: boolean;
 }
 
 // =============================================================================

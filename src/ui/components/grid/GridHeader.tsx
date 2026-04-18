@@ -168,8 +168,8 @@ export function GridHeader({
   };
 
   const menuItems = [
-    { label: t('column.rename'), action: () => { setMenuOpen(false); handleDoubleClick(); } },
-    { label: t('column.customize'), action: () => { setMenuOpen(false); setOptionsPanelOpen(true); } },
+    ...(onRename ? [{ label: t('column.rename'), action: () => { setMenuOpen(false); handleDoubleClick(); } }] : []),
+    ...(onUpdateOptions ? [{ label: t('column.customize'), action: () => { setMenuOpen(false); setOptionsPanelOpen(true); } }] : []),
     ...(onChangeType ? [{ label: t('column.changeType'), icon: '⇄', action: () => { setTypeMenuOpen(true); } }] : []),
     { type: 'divider' as const },
     { label: t(sortLabelKey(field.type, 'asc') as any), action: () => { setMenuOpen(false); onSort?.(field.id, 'asc'); } },
@@ -177,7 +177,7 @@ export function GridHeader({
     ...(sortDirection ? [{ label: t('column.sortNone' as any), action: () => { setMenuOpen(false); onSort?.(field.id, null); } }] : []),
     { type: 'divider' as const },
     { label: t('column.hide'), action: () => { setMenuOpen(false); onHide?.(field.id); } },
-    { label: t('column.delete'), action: () => { setMenuOpen(false); onDelete?.(field.id); }, danger: true },
+    ...(onDelete ? [{ label: t('column.delete'), action: () => { setMenuOpen(false); onDelete(field.id); }, danger: true }] : []),
   ];
 
   return (
@@ -226,7 +226,13 @@ export function GridHeader({
         />
       ) : (
         <div
-          onDoubleClick={handleDoubleClick}
+          onClick={(e) => {
+            if (onRename) e.stopPropagation();
+          }}
+          onDoubleClick={(e) => {
+            e.stopPropagation();
+            handleDoubleClick();
+          }}
           style={{
             flex: 1,
             minWidth: 0,
@@ -235,10 +241,19 @@ export function GridHeader({
             whiteSpace: 'nowrap',
             position: 'relative',
           }}
-          title={field.label}
+          title={onRename ? `${field.label} — double-click to rename` : field.label}
         >
           <span>
             {field.label}
+            {field.required && (
+              <span
+                style={{ color: '#dc2626', marginLeft: '3px', fontWeight: 600 }}
+                title="Required"
+                aria-label="Required"
+              >
+                *
+              </span>
+            )}
             {sortDirection && (
               <span style={{ color: '#2563eb', fontSize: '12px', marginLeft: '4px' }}>
                 {sortDirection === 'asc' ? '↑' : '↓'}

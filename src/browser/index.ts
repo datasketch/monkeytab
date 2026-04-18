@@ -4,7 +4,7 @@
  */
 
 // Main public API
-export { MonkeyTable, type MonkeyTableProps, type MonkeyTableColumn, type CellRendererFn } from './MonkeyTable.tsx';
+export { MonkeyTable, type MonkeyTableProps, type MonkeyTableColumn, type CellRendererFn, type MonkeyTableHandle } from './MonkeyTable.tsx';
 
 // Building blocks for advanced use
 export { BrowserClient } from './BrowserClient.ts';
@@ -16,6 +16,10 @@ export type { ExtendedClient, FetchOptions, FunctionInfo, ValidateFieldTypeResul
 
 // Re-export i18n for consumers who want custom translations
 export { useI18n, type I18nStrings, type I18nContextValue } from '../ui/i18n/index.ts';
+
+// Realtime / multiplayer — consumer-owned WS, hook pushes events into the cache
+export { useMonkeyTabSync } from '../ui/hooks/useRealtimeSync.ts';
+export { usePresence, usePresenceAtCell } from '../ui/client/PresenceContext.tsx';
 
 // Re-export Grid and PaginationBar for advanced usage
 export { Grid, type RowHeightOption, type CellRenderer } from '../ui/components/grid/Grid.tsx';
@@ -54,6 +58,11 @@ export type {
   FilterGroup,
   FilterCondition,
   SortSpec,
+  RemoteChangeEvent,
+  RowCreatedEvent,
+  RowUpdatedEvent,
+  RowDeletedEvent,
+  PresenceUser,
 } from '@monkeytab/core';
 
 // Options catalog for lifecycle tracking

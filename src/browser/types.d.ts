@@ -340,6 +340,20 @@ export interface TextFieldOptions {
   placeholder?: string;
   richText?: boolean;
   json?: boolean;
+  /** Popup editor width. Pixels (number) or CSS length string (e.g. `'50vw'`). */
+  popupWidth?: number | string;
+  /** Popup textarea min height. Pixels or CSS length. */
+  popupMinHeight?: number | string;
+  /** Popup textarea max height. Pixels or CSS length. */
+  popupMaxHeight?: number | string;
+}
+
+/** Global defaults for the Text column popup editor.
+ *  Per-column `TextFieldOptions.popup*` overrides these. */
+export interface TextPopupSize {
+  width?: number | string;
+  minHeight?: number | string;
+  maxHeight?: number | string;
 }
 
 export interface NumberFieldOptions {
@@ -655,6 +669,8 @@ export interface MonkeyTableColumn {
   sortable?: boolean;
   /** Cell text alignment (default: type-dependent) */
   align?: 'left' | 'center' | 'right';
+  /** Block row creation when this field is empty (null/undefined/''/[]) */
+  required?: boolean;
 }
 
 export interface MonkeyTableProps {
@@ -758,6 +774,24 @@ export interface MonkeyTableProps {
   functionsEndpoint?: string | null;
   /** Called when a file is selected in file-type editors. Return the permanent URL after uploading. */
   onUpload?: (file: File, fieldType: string) => Promise<string>;
+  /** Global defaults for the Text column popup editor (multiline / richText / json).
+   *  Accepts numbers (pixels) or CSS length strings (e.g. `'50vw'`, `'60vh'`).
+   *  Per-column `TextFieldOptions.popup*` overrides these. */
+  textPopup?: TextPopupSize;
+
+  // Column lifecycle — each hook enables the matching header-menu entry.
+  // Fires after the internal mutation succeeds; update your `columns` prop
+  // to keep the external state in sync. Omit to hide the entry.
+  /** Called when the user renames a column. */
+  onColumnRename?: (fieldId: string, newLabel: string, oldLabel: string) => void;
+  /** Called when the user deletes a column. */
+  onColumnDelete?: (fieldId: string) => void;
+  /** Called when the user adds a column (via "+" button, ghost cell, or formula builder). */
+  onColumnCreate?: (field: { id: string; label: string; type: FieldType; options?: FieldOptions }) => void;
+  /** Called when the user changes a column's field type. */
+  onColumnChangeType?: (fieldId: string, newType: FieldType) => void;
+  /** Called when the user edits a column's type-specific options. */
+  onColumnUpdateOptions?: (fieldId: string, options: FieldOptions) => void;
 
   // Registry Extensions
   /** Custom computed functions — registered on mount, unregistered on unmount */
@@ -768,6 +802,25 @@ export interface MonkeyTableProps {
   renderers?: Record<string, (props: CellRendererProps) => ReactElement>;
   /** Custom type-level editors — keyed by FieldType, overrides built-in editors */
   editors?: Record<string, (props: CellEditorProps) => ReactElement>;
+
+  // -----------------------------------------------------------------------
+  // Async CRUD hooks — plumb the grid to a real backend.
+  // Run `monkeytab docs crud-hooks` for the full guide.
+  // -----------------------------------------------------------------------
+  /** Resolve row id from a row — `string` picks a field, function computes it. Falls back to `row.id`, then an internal rec-N id. */
+  rowKey?: string | ((row: Record<string, Value>) => string);
+  /** Called when a new row is added. Return the DB-assigned id (and optional canonical field values). Rejection removes the optimistic row. */
+  onRowCreate?: (draft: { fields: Record<string, Value> }) => Promise<{ id: string; fields?: Record<string, Value> }>;
+  /** Called when a single cell is saved. Awaited before the edit is considered durable; rejection rolls the cell back to oldValue. */
+  onCellSave?: (rowId: string, fieldId: string, newValue: Value, oldValue: Value) => Promise<void>;
+  /** Called when a row is deleted. Awaited before the delete is considered durable; rejection restores the row. */
+  onRowDelete?: (rowId: string) => Promise<void>;
+  /** Fires on any hook rejection or required-field violation. */
+  onHookError?: (kind: 'create' | 'update' | 'delete', err: unknown) => void;
+  /** Show an inline error toast when onHookError fires (default: false). */
+  errorToast?: boolean;
+  /** Render a per-cell saving indicator while async hooks are in flight (default: false). */
+  showCellSaveStatus?: boolean;
 }
 
 /**

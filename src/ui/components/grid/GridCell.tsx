@@ -5,6 +5,8 @@ import type { FieldSpec, Value, Row, Attachment, ImageFieldOptions } from '@monk
 import { componentRegistry } from '../../registry/ComponentRegistry.ts';
 import { getRenderer as getDefaultRenderer } from '../renderers/index.ts';
 import { getEditor as getDefaultEditor } from '../editors/index.ts';
+import { useCrudHooks } from '../../client/CrudHooksContext.tsx';
+import { usePresenceAtCell } from '../../client/PresenceContext.tsx';
 import type { CellRenderer } from './Grid.tsx';
 
 function fileToDataUrl(file: File): Promise<string> {
@@ -26,7 +28,7 @@ interface GridCellProps {
   customRenderer?: CellRenderer;
   /** Cell text alignment override */
   align?: 'left' | 'center' | 'right';
-  onSave?: (rowId: string, fieldId: string, value: Value) => void;
+  onSave?: (rowId: string, fieldId: string, value: Value) => void | Promise<void>;
   onContextMenu?: (e: React.MouseEvent) => void;
   onFillStart?: (rowId: string, fieldId: string) => void;
   isFillTarget?: boolean;
@@ -43,15 +45,21 @@ interface GridCellProps {
   isCompact?: boolean;
   /** Consumer-provided file upload handler — passed to file-type editors */
   onUpload?: (file: File, fieldType: string) => Promise<string>;
+  /** Row is pending (in-flight onRowCreate) — forces saving state, blocks editing */
+  isRowPending?: boolean;
+  /** Row is a draft (local-only until a cell save triggers promotion). */
+  isRowDraft?: boolean;
 }
 
 // Field types that need minimal padding to show their content properly
 const VISUAL_FIELD_TYPES = ['Image', 'Attachment'];
 
-export function GridCell({ rowId, field, value, row, customRenderer, align, onSave, onContextMenu, onFillStart, isFillTarget, isInRange, height, width, fixedHeight = true, allFields, isColumnSelected, isCompact, onUpload }: GridCellProps) {
+export function GridCell({ rowId, field, value, row, customRenderer, align, onSave, onContextMenu, onFillStart, isFillTarget, isInRange, height, width, fixedHeight = true, allFields, isColumnSelected, isCompact, onUpload, isRowPending, isRowDraft }: GridCellProps) {
   const contentRef = useRef<HTMLDivElement>(null);
   const [hasVerticalOverflow, setHasVerticalOverflow] = useState(false);
   const [hasHorizontalOverflow, setHasHorizontalOverflow] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'error'>('idle');
+  const { showCellSaveStatus } = useCrudHooks();
 
   const activeCell = useSelectionStore((state) => state.activeCell);
   const setActiveCell = useSelectionStore((state) => state.setActiveCell);
@@ -83,14 +91,29 @@ export function GridCell({ rowId, field, value, row, customRenderer, align, onSa
   const Renderer = componentRegistry.getRenderer(field.type) ?? getDefaultRenderer(field.type);
   const Editor = componentRegistry.getEditor(field.type) ?? getDefaultEditor(field.type);
 
-  const isReadOnly = !onSave || field.type === 'Computed';
+  const isReadOnly = !onSave || field.type === 'Computed' || isRowPending;
+
+  const runSave = useCallback((newValue: Value) => {
+    if (!onSave) return;
+    const result = onSave(rowId, field.id, newValue);
+    if (result && typeof (result as Promise<void>).then === 'function') {
+      setSaveStatus('saving');
+      (result as Promise<void>).then(
+        () => setSaveStatus('idle'),
+        () => {
+          setSaveStatus('error');
+          setTimeout(() => setSaveStatus('idle'), 1500);
+        },
+      );
+    }
+  }, [onSave, rowId, field.id]);
 
   // Single-click: select cell, but for Boolean toggle immediately, for Rating open editor
   const handleClick = () => {
     setActiveCell({ rowId, fieldId: field.id });
     if (isReadOnly) return;
     if (field.type === 'Boolean') {
-      onSave!(rowId, field.id, !value);
+      runSave(!value);
       return;
     }
     // Rating is handled inline — no action needed here
@@ -104,7 +127,7 @@ export function GridCell({ rowId, field, value, row, customRenderer, align, onSa
   const handleSave = (newValue: Value) => {
     stopEditing();
     if (newValue !== value && onSave) {
-      onSave(rowId, field.id, newValue);
+      runSave(newValue);
     }
   };
 
@@ -145,7 +168,7 @@ export function GridCell({ rowId, field, value, row, customRenderer, align, onSa
       if (newAttachments.length === 0) return;
 
       if (isSingleImage) {
-        onSave(rowId, field.id, newAttachments[0]);
+        runSave(newAttachments[0]);
       } else {
         // Append to existing images
         const existing: Attachment[] = value
@@ -155,12 +178,12 @@ export function GridCell({ rowId, field, value, row, customRenderer, align, onSa
             })
           : [];
         const merged = [...existing, ...newAttachments].slice(0, maxImages);
-        onSave(rowId, field.id, merged);
+        runSave(merged);
       }
     } finally {
       setProcessing(false);
     }
-  }, [isImageField, onSave, onUpload, field.type, field.id, rowId, value, isSingleImage, maxImages, maxFileSize]);
+  }, [isImageField, onSave, runSave, onUpload, field.type, field.id, rowId, value, isSingleImage, maxImages, maxFileSize]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     if (!isImageField || !onSave) return;
@@ -218,6 +241,26 @@ export function GridCell({ rowId, field, value, row, customRenderer, align, onSa
   const showScrollOnSelect = fixedHeight && isSelected && !isEditing;
   const showVerticalFade = fixedHeight && hasVerticalOverflow && !isSelected && !isEditing;
   const showHorizontalFade = hasHorizontalOverflow && !isSelected && !isEditing;
+
+  // Cell saving indicator — opt-in via CrudHooksContext.showCellSaveStatus.
+  // Pending-create rows force 'saving' across every cell.
+  const effectiveStatus: 'idle' | 'saving' | 'error' =
+    showCellSaveStatus && isRowPending ? 'saving' : (showCellSaveStatus ? saveStatus : 'idle');
+  const saveBorderColor =
+    effectiveStatus === 'saving' ? '#2563eb' : effectiveStatus === 'error' ? '#dc2626' : null;
+
+  // Required-field indicator: draft row + required field + empty value → solid red left border.
+  // Takes precedence over save-status border so the "fill me in" signal isn't hidden.
+  const isMissingRequired =
+    isRowDraft === true &&
+    field.required === true &&
+    (value === null || value === undefined || value === '' || (Array.isArray(value) && value.length === 0));
+  const draftBorderColor = isMissingRequired ? '#dc2626' : null;
+
+  // Multiplayer presence — outline cells other users are focused on.
+  const presenceUsers = usePresenceAtCell(rowId, field.id);
+  const presenceUser = presenceUsers[0];
+  const presenceColor = presenceUser?.color ?? null;
 
   // Computed cell styling
   const isComputed = field.type === 'Computed';
@@ -278,6 +321,14 @@ export function GridCell({ rowId, field, value, row, customRenderer, align, onSa
           background: '#eff6ff',
           boxShadow: 'inset 0 0 0 2px #2563eb',
         }),
+        ...(draftBorderColor
+          ? { borderLeft: `2px solid ${draftBorderColor}` }
+          : saveBorderColor && {
+              borderLeft: `2px ${effectiveStatus === 'saving' && isRowPending ? 'dashed' : 'solid'} ${saveBorderColor}`,
+            }),
+        ...(presenceColor && !isSelected && {
+          boxShadow: `inset 0 0 0 2px ${presenceColor}`,
+        }),
       }}
       data-row-id={rowId}
       data-field-id={field.id}
@@ -316,7 +367,7 @@ export function GridCell({ rowId, field, value, row, customRenderer, align, onSa
             onUpload={onUpload}
           />
         ) : field.type === 'Rating' && !isReadOnly ? (
-          <InlineRating value={value} field={field} onSave={(v) => onSave!(rowId, field.id, v)} />
+          <InlineRating value={value} field={field} onSave={(v) => runSave(v)} />
         ) : customRenderer && row ? (
           customRenderer(value, row, field.id)
         ) : (

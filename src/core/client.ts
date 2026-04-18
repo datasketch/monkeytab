@@ -226,6 +226,8 @@ export interface CreateRecordArgs {
   baseId: string;
   tableId: string;
   fields: Record<string, Value>;
+  /** Optional caller-provided record id. When omitted, the adapter generates one. */
+  id?: string;
 }
 
 export interface UpdateRecordArgs {
@@ -233,6 +235,8 @@ export interface UpdateRecordArgs {
   tableId: string;
   recordId: string;
   fields: Record<string, Value>;
+  /** Optional prior field value (single-field updates only). Used by UI-layer hooks for rollback. */
+  oldValue?: Value;
 }
 
 export interface DeleteRecordArgs {

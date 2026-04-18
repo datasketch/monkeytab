@@ -133,12 +133,12 @@ interface GridProps {
   rows: Row[];
   rowHeight?: RowHeightOption;
   showRowNumbers?: boolean;
-  onCellSave?: (rowId: string, fieldId: string, value: Value) => void;
+  onCellSave?: (rowId: string, fieldId: string, value: Value) => void | Promise<void>;
   onRowDelete?: (rowId: string) => void;
   onRowDuplicate?: (rowId: string) => void;
   onRowView?: (rowId: string) => void;
   onRowClick?: (row: Row) => void;
-  onAddRow?: (count?: number, afterRowId?: string) => void;
+  onAddRow?: (count?: number, afterRowId?: string, defaults?: Record<string, Value>) => void;
   onRowsReorder?: (rowIds: string[]) => void;
   onColumnsReorder?: (fieldIds: string[]) => void;
   onSelectionChange?: (selectedRowIds: string[]) => void;
@@ -251,6 +251,7 @@ export function Grid({
 }: GridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const searchQuery = useSearchQuery();
+  const { t } = useI18n();
   const { data: settings } = useSettings();
   const isCompact = settings?.defaultCompactMode ?? false;
   const activeCell = useSelectionStore((state) => state.activeCell);
@@ -475,6 +476,36 @@ export function Grid({
     },
     [sorting]
   );
+
+  // When adding a row from inside a group (per-row "+" or context menu), inherit
+  // the group's value from the source row so the new row lands in the same group.
+  // For a Computed groupBy, recurse into inputFieldIds until we hit non-computed
+  // terminal fields — copying those makes the compute produce the same group key.
+  const computeInheritedDefaults = useCallback((sourceRowId: string): Record<string, Value> | undefined => {
+    if (!groupBy) return undefined;
+    const source = rows.find((r) => r.id === sourceRowId);
+    if (!source) return undefined;
+    const byId = new Map(table.fields.map((f) => [f.id, f] as const));
+    const terminals: string[] = [];
+    const visited = new Set<string>();
+    const visit = (id: string) => {
+      if (visited.has(id)) return;
+      visited.add(id);
+      const field = byId.get(id);
+      if (!field) return;
+      if (field.type === 'Computed') {
+        const opts = field.options as import('@monkeytab/core').ComputedFieldOptions | undefined;
+        opts?.inputFieldIds?.forEach(visit);
+      } else {
+        terminals.push(id);
+      }
+    };
+    visit(groupBy);
+    if (terminals.length === 0) return undefined;
+    const defaults: Record<string, Value> = {};
+    for (const id of terminals) defaults[id] = source.fields[id] ?? null;
+    return defaults;
+  }, [groupBy, rows, table.fields]);
 
   // Column header click:
   //   Plain click → toggle sort
@@ -1646,6 +1677,43 @@ export function Grid({
                         <span style={{ color: '#9ca3af', fontWeight: 400, fontSize: '12px' }}>
                           ({item.count})
                         </span>
+                        {onAddRow && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const lastId = item.rowIds[item.rowIds.length - 1];
+                              if (!lastId) return;
+                              if (isCollapsed) {
+                                setCollapsedGroups((prev) => {
+                                  const next = new Set(prev);
+                                  next.delete(item.groupValue);
+                                  return next;
+                                });
+                              }
+                              pendingInsertAfterRef.current = lastId;
+                              onAddRow(1, lastId, computeInheritedDefaults(lastId));
+                            }}
+                            title={t('toolbar.addRow')}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              padding: '2px 8px',
+                              background: 'transparent',
+                              color: '#6b7280',
+                              border: '1px solid #d1d5db',
+                              borderRadius: '4px',
+                              fontSize: '12px',
+                              cursor: 'pointer',
+                              marginLeft: '4px',
+                            }}
+                            onMouseEnter={(e) => { e.currentTarget.style.background = '#e5e7eb'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+                          >
+                            <span style={{ fontWeight: 600 }}>+</span>
+                            <span>{t('toolbar.addRow')}</span>
+                          </button>
+                        )}
                       </span>
                     </td>
                   </tr>
@@ -1721,7 +1789,7 @@ export function Grid({
                     onDelete={onRowDelete}
                     onView={onRowView}
                     onDuplicate={onRowDuplicate}
-                    onAddRow={onAddRow ? () => { pendingInsertAfterRef.current = rowId; onAddRow(1, rowId); } : undefined}
+                    onAddRow={onAddRow ? () => { pendingInsertAfterRef.current = rowId; onAddRow(1, rowId, computeInheritedDefaults(rowId)); } : undefined}
                     onContextMenu={(e) => {
                       e.preventDefault();
                       setContextMenu({ x: e.clientX, y: e.clientY, target: { type: 'row', rowId } });
@@ -1764,6 +1832,8 @@ export function Grid({
                         fixedHeight={isFixedHeight}
                         allFields={isComputed ? table.fields : undefined}
                         onUpload={onUpload}
+                        isRowPending={row.original.pending === true}
+                        isRowDraft={row.original.draft === true}
                       />
                     );
                   })}
@@ -1874,7 +1944,7 @@ export function Grid({
           onRowDelete={onRowDelete}
           onRowDuplicate={onRowDuplicate}
           onRowView={onRowView}
-          onAddRow={onAddRow ? (count, afterRowId) => { if (afterRowId) pendingInsertAfterRef.current = afterRowId; onAddRow(count, afterRowId); } : undefined}
+          onAddRow={onAddRow ? (count, afterRowId, defaults) => { if (afterRowId) pendingInsertAfterRef.current = afterRowId; const inherited = afterRowId ? computeInheritedDefaults(afterRowId) : undefined; onAddRow(count, afterRowId, defaults ?? inherited); } : undefined}
           onColumnRename={onColumnRename}
           onColumnDelete={onColumnDelete}
           onColumnHide={handleHide}
@@ -1931,12 +2001,12 @@ function GridContextMenu({
   table: TableSpec;
   rows: Row[];
   onClose: () => void;
-  onCellSave?: (rowId: string, fieldId: string, value: Value) => void;
+  onCellSave?: (rowId: string, fieldId: string, value: Value) => void | Promise<void>;
   columnEditable?: Record<string, boolean>;
   onRowDelete?: (rowId: string) => void;
   onRowDuplicate?: (rowId: string) => void;
   onRowView?: (rowId: string) => void;
-  onAddRow?: (count?: number, afterRowId?: string) => void;
+  onAddRow?: (count?: number, afterRowId?: string, defaults?: Record<string, Value>) => void;
   onColumnRename?: (fieldId: string, newLabel: string) => void;
   onColumnDelete?: (fieldId: string) => void;
   onColumnHide?: (fieldId: string) => void;
@@ -2043,7 +2113,7 @@ function GridContextMenu({
     }
     if (onRowDelete) {
       items.push({ divider: true });
-      items.push({ label: t('row.delete'), icon: '\u2715', action: () => { if (confirm(t('row.deleteConfirm'))) { onRowDelete(target.rowId); } onClose(); }, danger: true });
+      items.push({ label: t('row.delete'), icon: '\u2715', action: () => { onRowDelete(target.rowId); onClose(); }, danger: true });
     }
   } else if (target.type === 'row') {
     if (onRowView) {
@@ -2057,7 +2127,7 @@ function GridContextMenu({
     }
     if (onRowDelete) {
       items.push({ divider: true });
-      items.push({ label: t('row.delete'), icon: '\u2715', action: () => { if (confirm(t('row.deleteConfirm'))) { onRowDelete(target.rowId); } onClose(); }, danger: true });
+      items.push({ label: t('row.delete'), icon: '\u2715', action: () => { onRowDelete(target.rowId); onClose(); }, danger: true });
     }
   } else if (target.type === 'column') {
     const field = table.fields.find((f) => f.id === target.fieldId);
@@ -2104,9 +2174,7 @@ function GridContextMenu({
     if (onColumnDelete) {
       items.push({ divider: true });
       items.push({ label: t('column.delete'), action: () => {
-        if (confirm(t('column.deleteConfirm'))) {
-          onColumnDelete(target.fieldId);
-        }
+        onColumnDelete(target.fieldId);
         onClose();
       }, danger: true });
     }

@@ -117,3 +117,12 @@ export { FunctionRegistry, functionRegistry, BUILT_IN_FUNCTIONS, computeFunction
 // Constraints
 export type { FieldTypeConstraint, ConstraintConfig, ConstraintViolation } from './constraints.ts';
 export { ConstraintRegistry, constraintRegistry, BUILT_IN_CONSTRAINTS } from './constraints.ts';
+
+// Realtime / multiplayer
+export type {
+  RemoteChangeEvent,
+  RowCreatedEvent,
+  RowUpdatedEvent,
+  RowDeletedEvent,
+  PresenceUser,
+} from './realtime.ts';

@@ -4,10 +4,10 @@
  * Shows how to embed an editable table with no server.
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
-import { MonkeyTable } from '@monkeytab/browser';
-import type { Value } from '@monkeytab/browser';
+import { MonkeyTable, type MonkeyTableHandle } from '@monkeytab/browser';
+import type { Value, PresenceUser, RemoteChangeEvent } from '@monkeytab/browser';
 
 // ---------------------------------------------------------------------------
 // Example 1: Simple editable table
@@ -561,8 +561,282 @@ function HeightModesExample({ locale, language, compactMode }: { locale: string;
 }
 
 
+// ---------------------------------------------------------------------------
+// Example: Async CRUD hooks — round-trip editing against a fake async DB.
+//
+// This tab exercises:
+//   • Click Add → draft row appears locally (red border on empty required cells)
+//   • Fill Title → draft promotes via onRowCreate, DB id replaces the grid's temp id
+//   • Edit Title with other required-missing? → stays draft, onHookError('create')
+//   • onCellSave awaits persist on a persisted row; reject rolls back to oldValue
+//   • onRowDelete awaits persist; reject puts the row back
+//   • showCellSaveStatus shows a per-cell saving border
+//   • errorToast shows an inline error message
+// ---------------------------------------------------------------------------
+
+const ASYNC_CRUD_COLUMNS = [
+  { id: 'Title', type: 'Text' as const, required: true },
+  { id: 'Status', type: 'SingleSelect' as const, options: {
+    options: [
+      { value: 'open', label: 'Open', color: '#3b82f6' },
+      { value: 'done', label: 'Done', color: '#10b981' },
+    ],
+  }},
+  { id: 'Priority', type: 'Number' as const },
+];
+
+function AsyncCrudExample() {
+  // Fake async DB — persists across re-renders.
+  const db = useMemo(() => {
+    const m = new Map<string, Record<string, Value>>();
+    m.set('db-1', { id: 'db-1', Title: 'Write docs', Status: 'open', Priority: 1 });
+    m.set('db-2', { id: 'db-2', Title: 'Ship feature', Status: 'done', Priority: 2 });
+    return m;
+  }, []);
+
+  const [rows, setRows] = useState<Array<Record<string, Value>>>(() => [...db.values()]);
+  const [forceReject, setForceReject] = useState(false);
+  const [log, setLog] = useState<string[]>([]);
+
+  const append = (msg: string) =>
+    setLog((prev) => [`[${new Date().toLocaleTimeString()}] ${msg}`, ...prev].slice(0, 20));
+
+  const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  const handleRowCreate = async ({ fields }: { fields: Record<string, Value> }) => {
+    await delay(400);
+    const id = `db-${crypto.randomUUID().slice(0, 8)}`;
+    const full = { id, ...fields };
+    db.set(id, full);
+    setRows([...db.values()]);
+    append(`onRowCreate → assigned id ${id}`);
+    return { id, fields: full };
+  };
+
+  const handleCellSave = async (rowId: string, fieldId: string, newValue: Value, oldValue: Value) => {
+    append(`onCellSave ${rowId}.${fieldId}: ${JSON.stringify(oldValue)} → ${JSON.stringify(newValue)}`);
+    await delay(400);
+    if (forceReject) {
+      append(`onCellSave rejected (force-reject enabled) — grid will roll back`);
+      throw new Error('Forced rejection');
+    }
+    const row = db.get(rowId);
+    if (!row) throw new Error(`Row not found: ${rowId}`);
+    db.set(rowId, { ...row, [fieldId]: newValue });
+    setRows([...db.values()]);
+  };
+
+  const handleRowDelete = async (rowId: string) => {
+    await delay(400);
+    if (forceReject) {
+      append(`onRowDelete rejected (force-reject enabled) — grid will restore the row`);
+      throw new Error('Forced rejection');
+    }
+    db.delete(rowId);
+    setRows([...db.values()]);
+    append(`onRowDelete ${rowId}`);
+  };
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 16, alignItems: 'center', padding: '8px 12px', background: '#f9fafb', borderBottom: '1px solid #e5e7eb' }}>
+        <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+          <input type="checkbox" checked={forceReject} onChange={(e) => setForceReject(e.target.checked)} />
+          Force reject (update/delete) — exercises rollback
+        </label>
+        <span style={{ fontSize: 12, color: '#6b7280' }}>
+          Click <b>Add row</b>, fill in <b>Title</b>* (required), then edit cells. Each hook runs against a fake DB with a 400 ms delay.
+        </span>
+      </div>
+      <div style={{ height: 'calc(100% - 200px)' }}>
+        <MonkeyTable
+          columns={ASYNC_CRUD_COLUMNS}
+          rows={rows}
+          rowKey="id"
+          height="100%"
+          onRowCreate={handleRowCreate}
+          onCellSave={handleCellSave}
+          onRowDelete={handleRowDelete}
+          onHookError={(kind, err) => append(`onHookError [${kind}]: ${err instanceof Error ? err.message : String(err)}`)}
+          errorToast
+          showCellSaveStatus
+        />
+      </div>
+      <div style={{ padding: 8, background: '#0f172a', color: '#cbd5e1', fontFamily: 'monospace', fontSize: 12, maxHeight: 180, overflow: 'auto' }}>
+        {log.length === 0 ? <div style={{ opacity: 0.5 }}>Hook activity will appear here…</div> : log.map((l, i) => <div key={i}>{l}</div>)}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Example: Multiplayer — two peers share a BroadcastChannel (no backend)
+// ---------------------------------------------------------------------------
+
+const MP_COLUMNS = [
+  { id: 'Task' },
+  { id: 'Status', type: 'SingleSelect' as const, options: { options: [
+    { value: 'todo', label: 'To do', color: '#dbeafe' },
+    { value: 'doing', label: 'Doing', color: '#fef3c7' },
+    { value: 'done', label: 'Done', color: '#dcfce7' },
+  ]}},
+  { id: 'Owner' },
+];
+
+const MP_INITIAL_ROWS = [
+  { id: 'task-1', Task: 'Draft proposal', Status: 'doing', Owner: 'Alice' },
+  { id: 'task-2', Task: 'Review PR #42', Status: 'todo', Owner: 'Bob' },
+];
+
+interface Peer {
+  seat: 'A' | 'B';
+  name: string;
+  color: string;
+}
+
+const PEERS: Peer[] = [
+  { seat: 'A', name: 'Alice', color: '#2563eb' },
+  { seat: 'B', name: 'Bob',   color: '#dc2626' },
+];
+
+function MultiplayerExample() {
+  // Each peer owns its own rows state (simulating two browser tabs).
+  const [rowsA, setRowsA] = useState<Array<Record<string, Value>>>(MP_INITIAL_ROWS);
+  const [rowsB, setRowsB] = useState<Array<Record<string, Value>>>(MP_INITIAL_ROWS);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 12, padding: 12 }}>
+      <div style={{ fontSize: 13, color: '#475569', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, padding: 10 }}>
+        Two independent <b>MonkeyTable</b> instances each open their own <code>BroadcastChannel</code> (same name).
+        Edit on the left — watch the right update in real time (and vice versa). No server involved.
+        Click a cell to broadcast your cursor; the other peer sees a colored outline and an avatar.
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, flex: 1, minHeight: 0 }}>
+        {PEERS.map((peer) => (
+          <PeerTable
+            key={peer.seat}
+            peer={peer}
+            otherPeer={PEERS.find((p) => p.seat !== peer.seat)!}
+            rows={peer.seat === 'A' ? rowsA : rowsB}
+            setRows={peer.seat === 'A' ? setRowsA : setRowsB}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PeerTable({
+  peer,
+  otherPeer,
+  rows,
+  setRows,
+}: {
+  peer: Peer;
+  otherPeer: Peer;
+  rows: Array<Record<string, Value>>;
+  setRows: React.Dispatch<React.SetStateAction<Array<Record<string, Value>>>>;
+}) {
+  const tableRef = useRef<MonkeyTableHandle>(null);
+
+  // Each peer gets its OWN BroadcastChannel instance (same name). BroadcastChannel
+  // does not deliver messages to the same instance that sent them — even within a
+  // single tab — so using one shared object would swallow every message. Lazy-init
+  // via ref; no cleanup (StrictMode would close the channel prematurely).
+  const channelRef = useRef<BroadcastChannel | null>(null);
+  if (!channelRef.current) channelRef.current = new BroadcastChannel('monkeytab-mp-demo');
+  const channel = channelRef.current;
+
+  // Presence: whoever `otherPeer` has told us about — we track their cursor.
+  const [otherCursor, setOtherCursor] = useState<{ rowId: string; fieldId?: string } | null>(null);
+
+  // Subscribe to remote messages from the other peer.
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data.from === peer.seat) return; // defensive — own posts aren't echoed anyway
+      if (e.data.kind === 'change') {
+        const event: RemoteChangeEvent = e.data.event;
+        tableRef.current?.applyRemoteChange(event);
+        // Also update our local `rows` so the table re-seeds correctly on prop change.
+        setRows((prev) => applyToLocalRows(prev, event));
+      } else if (e.data.kind === 'cursor') {
+        setOtherCursor(e.data.cursor);
+      }
+    };
+    channel.addEventListener('message', handler);
+    return () => channel.removeEventListener('message', handler);
+  }, [channel, peer.seat, setRows]);
+
+  const presence: PresenceUser[] = otherCursor
+    ? [{ userId: otherPeer.seat, name: otherPeer.name, color: otherPeer.color, cursor: otherCursor }]
+    : [{ userId: otherPeer.seat, name: otherPeer.name, color: otherPeer.color }];
+
+  const broadcastChange = (event: RemoteChangeEvent) => {
+    channel.postMessage({ from: peer.seat, kind: 'change', event });
+  };
+
+  const broadcastCursor = (rowId: string, fieldId?: string) => {
+    channel.postMessage({ from: peer.seat, kind: 'cursor', cursor: { rowId, fieldId } });
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', border: `2px solid ${peer.color}`, borderRadius: 6, overflow: 'hidden', minHeight: 0 }}>
+      <div style={{ padding: '6px 10px', background: peer.color, color: '#fff', fontWeight: 600, fontSize: 13 }}>
+        {peer.name}'s view (seat {peer.seat})
+      </div>
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <MonkeyTable
+          ref={tableRef}
+          columns={MP_COLUMNS}
+          rows={rows}
+          rowKey="id"
+          height="100%"
+          presence={presence}
+          onActiveCellChange={(rowId, fieldId) => {
+            if (rowId && fieldId) broadcastCursor(rowId, fieldId);
+          }}
+          onRowCreate={async ({ fields }) => {
+            const id = `task-${crypto.randomUUID().slice(0, 8)}`;
+            const row = { id, fields, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+            setRows((prev) => [...prev, { id, ...fields }]);
+            broadcastChange({ type: 'row.created', row });
+            return { id };
+          }}
+          onCellSave={async (rowId, fieldId, value) => {
+            setRows((prev) => prev.map((r) => (r.id === rowId ? { ...r, [fieldId]: value } : r)));
+            broadcastChange({ type: 'row.updated', rowId, fields: { [fieldId]: value }, updatedAt: new Date().toISOString() });
+          }}
+          onRowDelete={async (rowId) => {
+            setRows((prev) => prev.filter((r) => r.id !== rowId));
+            broadcastChange({ type: 'row.deleted', rowId });
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function applyToLocalRows(
+  prev: Array<Record<string, Value>>,
+  event: RemoteChangeEvent,
+): Array<Record<string, Value>> {
+  switch (event.type) {
+    case 'row.created':
+      if (prev.some((r) => r.id === event.row.id)) return prev;
+      return [...prev, { id: event.row.id, ...event.row.fields }];
+    case 'row.updated':
+      return prev.map((r) => (r.id === event.rowId ? { ...r, ...event.fields } : r));
+    case 'row.deleted':
+      return prev.filter((r) => r.id !== event.rowId);
+    default:
+      return prev;
+  }
+}
+
 const TABS: Array<{ id: string; label: string; private?: boolean }> = [
   { id: 'editable', label: 'Editable' },
+  { id: 'async-crud', label: 'Async CRUD' },
+  { id: 'multiplayer', label: 'Multiplayer' },
   { id: 'height', label: 'Height Modes' },
   { id: 'columns', label: 'Column Options' },
   { id: 'empty', label: 'Empty Table' },
@@ -792,6 +1066,14 @@ function App() {
 
         {tab === 'pagination' && (
           <PaginationExample locale={locale} language={language} />
+        )}
+
+        {tab === 'async-crud' && (
+          <AsyncCrudExample />
+        )}
+
+        {tab === 'multiplayer' && (
+          <MultiplayerExample />
         )}
 
       </div>

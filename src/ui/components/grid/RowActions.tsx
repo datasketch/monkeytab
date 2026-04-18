@@ -60,9 +60,7 @@ export function RowActions({
 
   const handleDelete = () => {
     setMenuOpen(false);
-    if (confirm(t('row.deleteConfirm'))) {
-      onDelete?.(rowId);
-    }
+    onDelete?.(rowId);
   };
 
   const handleView = () => {

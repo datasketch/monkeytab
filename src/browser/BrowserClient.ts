@@ -125,11 +125,12 @@ export class BrowserClient implements ExtendedClient {
     return this.adapter.getRecord(args.baseId, args.tableId, args.recordId);
   }
 
-  async createRecord(args: { baseId: string; tableId: string; fields: Record<string, Value> }): Promise<Row> {
-    return this.adapter.createRecord(args.baseId, args.tableId, args.fields);
+  async createRecord(args: { baseId: string; tableId: string; fields: Record<string, Value>; id?: string }): Promise<Row> {
+    return this.adapter.createRecord(args.baseId, args.tableId, args.fields, args.id !== undefined ? { id: args.id } : undefined);
   }
 
-  async updateRecord(args: { baseId: string; tableId: string; recordId: string; fields: Record<string, Value> }): Promise<Row> {
+  async updateRecord(args: { baseId: string; tableId: string; recordId: string; fields: Record<string, Value>; oldValue?: Value }): Promise<Row> {
+    // oldValue is a UI-layer concern (hook rollback); adapter only needs fields.
     return this.adapter.updateRecord(args.baseId, args.tableId, args.recordId, args.fields);
   }
 

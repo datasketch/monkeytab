@@ -6,10 +6,13 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { useClient } from '../ui/client/ClientContext.tsx';
+import { useCrudHooks } from '../ui/client/CrudHooksContext.tsx';
 import { useBase, useTable, useTableRows, useSettings, useTrash } from '../ui/hooks/useTableData.ts';
 import {
   useUpdateRecord,
   useCreateRecord,
+  useCreateDraftRow,
+  usePromoteDraftRow,
   useDeleteRecord,
   useRenameTable,
   useCreateTable,
@@ -114,9 +117,22 @@ export interface TableViewProps {
   onColorByChange?: (fieldId: string | null) => void;
   /** Optional per-value color overrides */
   colorByMap?: Record<string, string>;
+
+  // ── Column lifecycle — fire after the internal mutation settles.
+  // Each is gated: omit the callback to hide its menu entry.
+  /** Called after the user renames a column via the header menu or double-click. */
+  onColumnRename?: (fieldId: string, newLabel: string, oldLabel: string) => void;
+  /** Called after the user deletes a column via the header menu. */
+  onColumnDelete?: (fieldId: string) => void;
+  /** Called after the user adds a column via the "+" button or ghost cell. */
+  onColumnCreate?: (field: { id: string; label: string; type: FieldType; options?: FieldOptions }) => void;
+  /** Called after the user changes a column's field type. */
+  onColumnChangeType?: (fieldId: string, newType: FieldType) => void;
+  /** Called after the user edits a column's type-specific options (select choices, number format, etc.). */
+  onColumnUpdateOptions?: (fieldId: string, options: FieldOptions) => void;
 }
 
-export function TableView({ baseId, tableId, onNavigate, onNavigateHome, onSelectionChange, selectedRowIds, onRowClick, customRenderers, customIcons, columnEditable, columnWidth, columnMinWidth, columnMaxWidth, columnSortable, columnAlign, onUpload, onCellChange, onSortChange, sortBy, sortDirection, totalRows, page = 1, pageSize = 500, onPageChange, paginationMode = 'simple', paginationLoading, ghostGrid, columnFit, autoFitMin, autoFitMax, selectionActions, groupBy, groupCollapsed, onGroupByChange, groupOrder, colorBy, onColorByChange, colorByMap }: TableViewProps) {
+export function TableView({ baseId, tableId, onNavigate, onNavigateHome, onSelectionChange, selectedRowIds, onRowClick, customRenderers, customIcons, columnEditable, columnWidth, columnMinWidth, columnMaxWidth, columnSortable, columnAlign, onUpload, onCellChange, onSortChange, sortBy, sortDirection, totalRows, page = 1, pageSize = 500, onPageChange, paginationMode = 'simple', paginationLoading, ghostGrid, columnFit, autoFitMin, autoFitMax, selectionActions, groupBy, groupCollapsed, onGroupByChange, groupOrder, colorBy, onColorByChange, colorByMap, onColumnRename, onColumnDelete, onColumnCreate, onColumnChangeType, onColumnUpdateOptions }: TableViewProps) {
   const { t } = useI18n();
   const client = useClient();
   const { data: base } = useBase(baseId);
@@ -169,7 +185,10 @@ export function TableView({ baseId, tableId, onNavigate, onNavigateHome, onSelec
 
   const updateRecord = useUpdateRecord(baseId, tableId);
   const createRecord = useCreateRecord(baseId, tableId);
+  const createDraftRow = useCreateDraftRow(baseId, tableId);
+  const promoteDraftRow = usePromoteDraftRow(baseId, tableId);
   const deleteRecord = useDeleteRecord(baseId, tableId);
+  const crudHooks = useCrudHooks();
   const renameTable = useRenameTable(baseId);
   const createTable = useCreateTable(baseId);
   const deleteTable = useDeleteTable(baseId);
@@ -276,16 +295,24 @@ export function TableView({ baseId, tableId, onNavigate, onNavigateHome, onSelec
   }, [updateTableDisplay]);
 
   const handleColumnChangeType = useCallback((fieldId: string, newType: FieldType) => {
-    updateFieldType.mutate({ fieldId, type: newType });
-  }, [updateFieldType]);
+    updateFieldType.mutate({ fieldId, type: newType }, {
+      onSuccess: () => onColumnChangeType?.(fieldId, newType),
+    });
+  }, [updateFieldType, onColumnChangeType]);
 
   const handleColumnValidateType = useCallback(async (fieldId: string, newType: FieldType) => {
     return client.validateFieldType({ baseId, tableId, fieldId, type: newType });
   }, [baseId, tableId, client]);
 
   const handleCreateComputedField = useCallback((label: string, options: ComputedFieldOptions) => {
-    createField.mutate({ label, type: 'Computed' as FieldType, options });
-  }, [createField]);
+    createField.mutate({ label, type: 'Computed' as FieldType, options }, {
+      onSuccess: (newField) => {
+        if (newField?.id) {
+          onColumnCreate?.({ id: newField.id, label: newField.label, type: newField.type, options: newField.options });
+        }
+      },
+    });
+  }, [createField, onColumnCreate]);
 
   const handleSortChange = useCallback((fieldId: string | null, direction: 'asc' | 'desc' | null) => {
     if (fieldId && direction) {
@@ -310,12 +337,19 @@ export function TableView({ baseId, tableId, onNavigate, onNavigateHome, onSelec
   const rows = queryResult?.rows ?? [];
   const tables = base?.tables ?? [];
 
+  const hasRequiredField = table.fields.some((f) => f.required);
+  const useDraftFlow = hasRequiredField || !!crudHooks.onRowCreate;
+
   const handleCellSave = (rowId: string, fieldId: string, value: Value) => {
     const row = rows.find((r) => r.id === rowId);
     const oldValue = row?.fields[fieldId] ?? null;
-    undoStore.push({ type: 'cell_edit', rowId, fieldId, oldValue, newValue: value });
     onCellChange?.(rowId, fieldId, value, oldValue);
-    updateRecord.mutate({ recordId: rowId, fieldId, value });
+    // Draft row → try to promote via onRowCreate. Keeps edits local on required-field failure.
+    if (row?.draft) {
+      return promoteDraftRow.mutateAsync({ rowId, fieldId, value }).then(() => undefined);
+    }
+    undoStore.push({ type: 'cell_edit', rowId, fieldId, oldValue, newValue: value });
+    return updateRecord.mutateAsync({ recordId: rowId, fieldId, value, oldValue }).then(() => undefined);
   };
 
   const handleAddRow = (count: number = 1, _afterRowId?: string) => {
@@ -323,6 +357,13 @@ export function TableView({ baseId, tableId, onNavigate, onNavigateHome, onSelec
     const fields: Record<string, Value> = {};
     for (const field of table.fields) {
       fields[field.id] = null;
+    }
+    if (useDraftFlow) {
+      // Create local draft rows — never hits onRowCreate until a required field is filled.
+      for (let i = 0; i < count; i++) {
+        createDraftRow({ ...fields });
+      }
+      return;
     }
     for (let i = 0; i < count; i++) {
       createRecord.mutate({ ...fields }, {
@@ -352,7 +393,11 @@ export function TableView({ baseId, tableId, onNavigate, onNavigateHome, onSelec
   };
 
   const handleColumnRename = (fieldId: string, newName: string) => {
-    renameField.mutate({ fieldId, label: newName });
+    const field = table.fields.find((f) => f.id === fieldId);
+    const oldLabel = field?.label ?? '';
+    renameField.mutate({ fieldId, label: newName }, {
+      onSuccess: () => onColumnRename?.(fieldId, newName, oldLabel),
+    });
   };
 
   const executeColumnDelete = (fieldId: string) => {
@@ -360,7 +405,9 @@ export function TableView({ baseId, tableId, onNavigate, onNavigateHome, onSelec
     if (field) {
       undoStore.push({ type: 'field_delete', fieldId, fieldName: field.label, fieldType: field.type });
     }
-    deleteField.mutate(fieldId);
+    deleteField.mutate(fieldId, {
+      onSuccess: () => onColumnDelete?.(fieldId),
+    });
   };
 
   const handleColumnDelete = (fieldId: string) => {
@@ -373,7 +420,9 @@ export function TableView({ baseId, tableId, onNavigate, onNavigateHome, onSelec
   };
 
   const handleColumnUpdateOptions = (fieldId: string, options: FieldOptions) => {
-    updateFieldOptions.mutate({ fieldId, options });
+    updateFieldOptions.mutate({ fieldId, options }, {
+      onSuccess: () => onColumnUpdateOptions?.(fieldId, options),
+    });
   };
 
   const handleColumnsReorder = (fieldIds: string[]) => {
@@ -389,6 +438,7 @@ export function TableView({ baseId, tableId, onNavigate, onNavigateHome, onSelec
       onSuccess: (newField) => {
         if (newField?.id) {
           undoStore.push({ type: 'field_create', fieldId: newField.id, fieldName: label, fieldType: type });
+          onColumnCreate?.({ id: newField.id, label: newField.label, type: newField.type, options: newField.options });
         }
       },
     });
@@ -506,13 +556,13 @@ export function TableView({ baseId, tableId, onNavigate, onNavigateHome, onSelec
           columnMaxWidth={columnMaxWidth}
           columnSortable={columnSortable}
           columnAlign={columnAlign}
-          onColumnRename={!isReadOnly ? handleColumnRename : undefined}
-          onColumnDelete={canDeleteField ? handleColumnDelete : undefined}
-          onColumnUpdateOptions={!isReadOnly ? handleColumnUpdateOptions : undefined}
-          onColumnChangeType={!isReadOnly ? handleColumnChangeType : undefined}
+          onColumnRename={!isReadOnly && onColumnRename ? handleColumnRename : undefined}
+          onColumnDelete={canDeleteField && onColumnDelete ? handleColumnDelete : undefined}
+          onColumnUpdateOptions={!isReadOnly && onColumnUpdateOptions ? handleColumnUpdateOptions : undefined}
+          onColumnChangeType={!isReadOnly && onColumnChangeType ? handleColumnChangeType : undefined}
           onColumnValidateType={handleColumnValidateType}
-          onCreateField={canCreateField ? handleCreateField : undefined}
-          onCreateComputedField={canCreateField ? handleCreateComputedField : undefined}
+          onCreateField={canCreateField && onColumnCreate ? handleCreateField : undefined}
+          onCreateComputedField={canCreateField && onColumnCreate ? handleCreateComputedField : undefined}
           onSortChange={handleSortChange}
           onUpload={onUpload}
           loading={isFetching || rowsLoading}
