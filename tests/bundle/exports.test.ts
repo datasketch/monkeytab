@@ -39,7 +39,8 @@ describe('built bundle (dist/monkeytab.js)', () => {
     const bundle = await import(BUNDLE_PATH);
 
     // Core public components from src/browser/index.ts
-    expect(typeof bundle.MonkeyTable).toBe('function');
+    // MonkeyTable is wrapped in forwardRef (since 0.3.0), which returns an object.
+    expect(bundle.MonkeyTable).toBeDefined();
     expect(typeof bundle.BrowserClient).toBe('function');
     expect(typeof bundle.Grid).toBe('function');
     expect(typeof bundle.PaginationBar).toBe('function');
@@ -65,6 +66,6 @@ describe('built bundle (dist/monkeytab.js)', () => {
     // MonkeyTable is the headline export — guard explicitly so the
     // failure message is unambiguous if it ever disappears.
     expect(bundle.MonkeyTable).toBeDefined();
-    expect(bundle.MonkeyTable.name).toBe('MonkeyTable');
+    expect(bundle.MonkeyTable.displayName).toBe('MonkeyTable');
   });
 });
