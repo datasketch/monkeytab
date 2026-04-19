@@ -6,7 +6,7 @@
 
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
-import { MonkeyTable, type MonkeyTableHandle } from '@monkeytab/browser';
+import { MonkeyTable, MonkeyTableFromConfig, type MonkeyTableHandle, type MonkeyTableConfig } from '@monkeytab/browser';
 import type { Value, PresenceUser, RemoteChangeEvent } from '@monkeytab/browser';
 
 // ---------------------------------------------------------------------------
@@ -833,8 +833,131 @@ function applyToLocalRows(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Example: Config-driven table — one JSON blob renders the whole thing
+//
+// Shows <MonkeyTableFromConfig> in action. Everything you'd normally spread
+// across columns + props + options lives in one serializable object that
+// round-trips through JSON.stringify. Non-serializable pieces (here: onChange)
+// stay as ordinary React props on the wrapper.
+// ---------------------------------------------------------------------------
+
+const FROM_CONFIG_INITIAL: MonkeyTableConfig = {
+  schemaVersion: 1,
+  columns: [
+    { id: 'Name' },
+    { id: 'Email', type: 'Email' },
+    { id: 'Role', type: 'SingleSelect', options: {
+      options: [
+        { value: 'Engineer', label: 'Engineer', color: '#dbeafe' },
+        { value: 'Designer', label: 'Designer', color: '#fce7f3' },
+        { value: 'Manager',  label: 'Manager',  color: '#dcfce7' },
+      ],
+    } },
+    { id: 'Salary',  type: 'Number',  options: { format: 'currency', precision: 0 } },
+    { id: 'Joined',  type: 'Date',    options: { dateFormat: 'iso' } },
+    { id: 'Active',  type: 'Boolean' },
+    { id: 'Website', type: 'URL' },
+  ],
+  rows: [
+    { Name: 'Alice Chen', Email: 'alice@acme.com', Role: 'Engineer', Salary: 95000,  Joined: '2022-03-15', Active: true,  Website: 'https://alicechen.dev' },
+    { Name: 'Bob Smith',  Email: 'bob@acme.com',   Role: 'Designer', Salary: 82000,  Joined: '2021-07-01', Active: true,  Website: 'https://bobsmith.design' },
+    { Name: 'Carol Wu',   Email: 'carol@acme.com', Role: 'Manager',  Salary: 110000, Joined: '2020-11-20', Active: false, Website: 'https://carolwu.io' },
+  ],
+  settings: {
+    editable: true,
+    height: 'auto',
+    rowHeight: 'medium',
+    pageSize: 25,
+    locale: 'en-US',
+    currencyCode: 'USD',
+    showRowNumbers: true,
+  },
+};
+
+function FromConfigExample({ locale, language, compactMode }: { locale: string; language: string; compactMode: boolean }) {
+  const [config, setConfig] = useState<MonkeyTableConfig>(FROM_CONFIG_INITIAL);
+  const [configText, setConfigText] = useState(() => JSON.stringify(FROM_CONFIG_INITIAL, null, 2));
+  const [parseError, setParseError] = useState<string | null>(null);
+
+  // Merge the tab-level locale/compact controls onto the config's own settings
+  // so the top-bar switches still work for this tab.
+  const effectiveConfig = useMemo<MonkeyTableConfig>(() => ({
+    ...config,
+    settings: {
+      ...config.settings,
+      locale,
+      language,
+      compactMode,
+    },
+  }), [config, locale, language, compactMode]);
+
+  const handleConfigChange = (text: string) => {
+    setConfigText(text);
+    try {
+      const parsed = JSON.parse(text) as MonkeyTableConfig;
+      setConfig(parsed);
+      setParseError(null);
+    } catch (err) {
+      setParseError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleRowsChange = (rows: Array<Record<string, Value>>) => {
+    // Reflect live edits back into the config so the JSON pane stays in sync.
+    setConfig((prev) => ({ ...prev, rows }));
+    setConfigText(JSON.stringify({ ...config, rows }, null, 2));
+  };
+
+  return (
+    <div className="example">
+      <h2>From Config</h2>
+      <div className="desc">
+        One <code>MonkeyTableConfig</code> blob — <code>{`{ columns, rows, settings }`}</code> — rendered by{' '}
+        <code>&lt;MonkeyTableFromConfig&gt;</code>. Edit the JSON on the right and the table re-renders live.
+        Edit cells in the table and the JSON updates to match.
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 440px', gap: 16, alignItems: 'stretch' }}>
+        <div className="table-container" style={{ height: 420 }}>
+          <MonkeyTableFromConfig
+            config={effectiveConfig}
+            onChange={handleRowsChange}
+          />
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#374151' }}>config (live JSON)</div>
+          <textarea
+            value={configText}
+            onChange={(e) => handleConfigChange(e.target.value)}
+            spellCheck={false}
+            style={{
+              flex: 1,
+              minHeight: 380,
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              fontSize: 12,
+              lineHeight: 1.5,
+              padding: 10,
+              borderRadius: 6,
+              border: `1px solid ${parseError ? '#ef4444' : '#d1d5db'}`,
+              background: '#fafafa',
+              color: '#111827',
+              resize: 'vertical',
+            }}
+          />
+          {parseError && (
+            <div style={{ fontSize: 12, color: '#b91c1c' }}>
+              JSON parse error: {parseError} — table still shows the last valid config.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const TABS: Array<{ id: string; label: string; private?: boolean }> = [
   { id: 'editable', label: 'Editable' },
+  { id: 'from-config', label: 'From Config' },
   { id: 'async-crud', label: 'Async CRUD' },
   { id: 'multiplayer', label: 'Multiplayer' },
   { id: 'height', label: 'Height Modes' },
@@ -1009,6 +1132,10 @@ function App() {
               </div>
             )}
           </div>
+        )}
+
+        {tab === 'from-config' && (
+          <FromConfigExample locale={locale} language={language} compactMode={compactMode} />
         )}
 
         {tab === 'height' && (

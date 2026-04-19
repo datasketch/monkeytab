@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-04-19
+
+### New
+- **`<MonkeyTableFromConfig>` + `resolveConfig()`** — describe a whole table as one JSON blob (`{ columns, rows, settings }`) and render it with a single component. The settings bucket mirrors the flat `<MonkeyTable>` props exactly; anything not serializable (handlers, custom renderers/editors, per-column `render`/`icon`) stays as ordinary React props on the wrapper. Use `resolveConfig(config)` to get the same props object if you'd rather keep using `<MonkeyTable>` directly. Useful for persisting user layouts, embedding tables in REST payloads, or having an LLM emit a table from a row sample. See [BROWSER.md → Config-driven API](./BROWSER.md#config-driven-api).
+
 ## [0.4.0] — 2026-04-18
 
 ### New
@@ -113,7 +118,8 @@ First public release.
 - `onUpload` prop — bring your own file upload (S3, Cloudinary, etc.)
 - Drag-and-drop and paste support for Image cells
 
-[Unreleased]: https://github.com/datasketch/monkeytab/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/datasketch/monkeytab/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/datasketch/monkeytab/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/datasketch/monkeytab/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/datasketch/monkeytab/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/datasketch/monkeytab/compare/v0.2.0...v0.2.1

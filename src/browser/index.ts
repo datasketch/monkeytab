@@ -6,6 +6,20 @@
 // Main public API
 export { MonkeyTable, type MonkeyTableProps, type MonkeyTableColumn, type CellRendererFn, type MonkeyTableHandle } from './MonkeyTable.tsx';
 
+// Config-driven façade — one JSON blob describes a whole table
+export {
+  resolveConfig,
+  type MonkeyTableConfig,
+  type MonkeyTableConfigColumn,
+  type MonkeyTableConfigSettings,
+  type ResolvedConfigProps,
+} from './config.ts';
+export {
+  MonkeyTableFromConfig,
+  type MonkeyTableFromConfigProps,
+  type MonkeyTableRuntimeProps,
+} from './MonkeyTableFromConfig.tsx';
+
 // Building blocks for advanced use
 export { BrowserClient } from './BrowserClient.ts';
 export { TableView, type TableViewProps } from './TableView.tsx';

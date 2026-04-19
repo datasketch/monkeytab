@@ -830,6 +830,117 @@ export interface MonkeyTableProps {
 export declare function MonkeyTable(props: MonkeyTableProps): ReactElement;
 
 // =============================================================================
+// Config-driven API
+// =============================================================================
+
+/** Column shape the JSON config supports — drops the two non-serializable
+ *  fields (`render`, `icon`) from MonkeyTableColumn. */
+export interface MonkeyTableConfigColumn {
+  id: string;
+  label?: string;
+  type?: FieldType;
+  options?: FieldOptions;
+  hidden?: boolean;
+  editable?: boolean;
+  width?: number;
+  minWidth?: number;
+  maxWidth?: number;
+  sortable?: boolean;
+  align?: 'left' | 'center' | 'right';
+  required?: boolean;
+}
+
+/** Every scalar/enum MonkeyTable prop grouped into one serializable bucket. */
+export interface MonkeyTableConfigSettings {
+  rowKey?: string;
+  groupBy?: string | null;
+  groupCollapsed?: boolean;
+  groupOrder?: 'auto' | 'asc' | 'desc' | 'count-asc' | 'count-desc' | string[];
+  colorBy?: string | null;
+  colorByMap?: Record<string, string>;
+  sortBy?: string | null;
+  sortDirection?: 'asc' | 'desc' | null;
+  totalRows?: number;
+  page?: number;
+  pageSize?: number;
+  paginationMode?: 'simple' | 'load-more';
+  paginationLoading?: boolean;
+  ghostGrid?: boolean | { rows?: number; columns?: number };
+  height?: 'auto' | number | string;
+  maxHeight?: number;
+  columnFit?: 'auto' | 'fill' | 'fixed';
+  autoFitMin?: number;
+  autoFitMax?: number;
+  rowHeight?: RowHeightOption;
+  showRowNumbers?: boolean;
+  compactMode?: boolean;
+  editable?: boolean;
+  allowCreateField?: boolean;
+  allowDeleteField?: boolean;
+  allowCreateRecord?: boolean;
+  allowColumnReorder?: boolean;
+  allowMultiColumnDrag?: boolean;
+  confirmBeforeDelete?: boolean;
+  showToolbar?: boolean;
+  showSearch?: boolean;
+  showFilters?: boolean;
+  showRowHeightControl?: boolean;
+  showRowNumbersControl?: boolean;
+  showAddRowButton?: boolean;
+  locale?: string;
+  language?: string;
+  dateDisplayFormat?: 'iso' | 'locale' | 'relative';
+  numberDecimalPlaces?: number;
+  numberThousandsSeparator?: boolean;
+  currencyCode?: string;
+  currencyDisplay?: 'symbol' | 'narrowSymbol' | 'code' | 'name';
+  translations?: Partial<I18nStrings>;
+  functionsEndpoint?: string | null;
+  textPopup?: TextPopupSize;
+  selectedRowIds?: string[];
+  errorToast?: boolean;
+  showCellSaveStatus?: boolean;
+}
+
+/** Fully-serializable MonkeyTable description — round-trips through JSON. */
+export interface MonkeyTableConfig {
+  /** Reserved for future migrators. */
+  schemaVersion?: number;
+  columns: MonkeyTableConfigColumn[];
+  rows: Array<Record<string, Value>>;
+  settings?: MonkeyTableConfigSettings;
+}
+
+/** The subset of MonkeyTableProps `resolveConfig` produces. */
+export type ResolvedConfigProps =
+  & Pick<MonkeyTableProps, 'columns' | 'rows'>
+  & MonkeyTableConfigSettings;
+
+/** Turn a MonkeyTableConfig into the flat prop object MonkeyTable already consumes. */
+export declare function resolveConfig(config: MonkeyTableConfig): ResolvedConfigProps;
+
+/** Props that stay on the component — anything that can't live in JSON. */
+export type MonkeyTableRuntimeProps = Pick<MonkeyTableProps,
+  | 'onChange' | 'onRowsChange' | 'onSelectionChange' | 'onRowClick'
+  | 'onCellChange'
+  | 'onRowCreate' | 'onCellSave' | 'onRowDelete' | 'onHookError'
+  | 'onGroupByChange' | 'onColorByChange' | 'onSortChange' | 'onPageChange'
+  | 'onColumnRename' | 'onColumnDelete' | 'onColumnCreate'
+  | 'onColumnChangeType' | 'onColumnUpdateOptions'
+  | 'onUpload'
+  | 'rowKey'
+  | 'selectionActions'
+  | 'functions' | 'constraints' | 'renderers' | 'editors'
+>;
+
+export interface MonkeyTableFromConfigProps extends MonkeyTableRuntimeProps {
+  config: MonkeyTableConfig;
+}
+
+/** Façade component: one JSON config + runtime-only React props. */
+export declare function MonkeyTableFromConfig(props: MonkeyTableFromConfigProps): ReactElement;
+
+// =============================================================================
 // Advanced / Building Blocks
 // =============================================================================
 

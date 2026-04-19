@@ -200,6 +200,77 @@ interface MonkeyTableColumn {
 
 ---
 
+## Config-driven API
+
+If you'd rather describe a whole table as one JSON blob — for example to store
+a user's table layout, serve a table from a REST endpoint, or have an LLM emit
+it from a sample of rows — use `<MonkeyTableFromConfig>`.
+
+```tsx
+import { MonkeyTableFromConfig, type MonkeyTableConfig } from '@datasketch/monkeytab';
+
+const config: MonkeyTableConfig = {
+  columns: [
+    { id: 'Name' },
+    { id: 'Age', type: 'Number', options: { format: 'decimal' } },
+    { id: 'Signup', type: 'Date', options: { dateFormat: 'iso' } },
+    { id: 'Status', type: 'SingleSelect', options: {
+      options: [
+        { value: 'active', label: 'Active', color: '#22c55e' },
+        { value: 'paused', label: 'Paused', color: '#f59e0b' },
+      ],
+    } },
+    { id: 'Website', type: 'URL' },
+  ],
+  rows: [
+    { Name: 'Alice', Age: 30, Signup: '2024-01-05', Status: 'active',  Website: 'https://example.com' },
+    { Name: 'Bob',   Age: 25, Signup: '2024-02-10', Status: 'paused',  Website: 'https://example.org' },
+  ],
+  settings: {
+    editable: true,
+    height: 'auto',
+    pageSize: 25,
+    locale: 'en-US',
+  },
+};
+
+<MonkeyTableFromConfig config={config} onChange={setRows} />
+```
+
+### Shape
+
+```ts
+interface MonkeyTableConfig {
+  schemaVersion?: number;              // reserved for future migrators
+  columns: MonkeyTableConfigColumn[];  // same as MonkeyTableColumn, minus render/icon
+  rows: Array<Record<string, Value>>;
+  settings?: MonkeyTableConfigSettings;
+}
+```
+
+`settings` is a flat bucket that mirrors the scalar/enum props documented
+above — `editable`, `height`, `pageSize`, `locale`, `groupBy`, `sortBy`,
+`dateDisplayFormat`, etc. Anything not serializable (React handlers, custom
+renderers/editors, `render`/`icon` on a column, `functions`/`constraints`,
+`presence`) stays as ordinary component props on `<MonkeyTableFromConfig>`.
+
+### resolveConfig
+
+If you'd rather keep using `<MonkeyTable>` directly, import `resolveConfig`
+to turn a config into the flat prop object it consumes:
+
+```tsx
+import { MonkeyTable, resolveConfig } from '@datasketch/monkeytab';
+
+const props = resolveConfig(config);
+<MonkeyTable {...props} onChange={setRows} />
+```
+
+The two forms are interchangeable — `<MonkeyTableFromConfig>` is a thin
+forwardRef wrapper that does exactly this internally.
+
+---
+
 ## Keyboard Shortcuts
 
 | Key | Action |
