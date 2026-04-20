@@ -642,6 +642,40 @@ export interface CellEditorProps {
 /** Custom cell renderer function */
 export type CellRendererFn = (value: Value, row: Record<string, Value>, fieldId: string) => React.ReactNode;
 
+/** Per-cell coloring function. Return a CSS color to tint the cell, or undefined for no tint. */
+export type CellColorFn = (row: Record<string, Value>, value: Value, fieldId: string) => string | undefined;
+
+/** One condition inside a color rule. Compare the cell value — or another
+ *  field's value when `field` is set — against the operator. */
+export type ColorCondition =
+  | { op: 'equals'; value: unknown; field?: string }
+  | { op: 'notEquals'; value: unknown; field?: string }
+  | { op: 'lt'; value: number; field?: string }
+  | { op: 'lte'; value: number; field?: string }
+  | { op: 'gt'; value: number; field?: string }
+  | { op: 'gte'; value: number; field?: string }
+  | { op: 'contains'; value: string; field?: string }
+  | { op: 'notContains'; value: string; field?: string }
+  | { op: 'empty'; field?: string }
+  | { op: 'notEmpty'; field?: string }
+  | { op: 'in'; values: unknown[]; field?: string }
+  | { op: 'notIn'; values: unknown[]; field?: string };
+
+/** One conditional-formatting rule. First rule whose `when` matches wins. */
+export interface ColorRule {
+  when: ColorCondition;
+  color: string;
+}
+
+/** Evaluate a rule list against a row/value. Returns the first matching
+ *  rule's color, or undefined if none match. Safe to call with an empty
+ *  or missing array. */
+export declare function evaluateColorRules(
+  rules: ColorRule[] | undefined | null,
+  row: Record<string, Value>,
+  value: Value,
+): string | undefined;
+
 export interface MonkeyTableColumn {
   /** Column id (used as key in row data) */
   id: string;
@@ -671,6 +705,13 @@ export interface MonkeyTableColumn {
   align?: 'left' | 'center' | 'right';
   /** Block row creation when this field is empty (null/undefined/''/[]) */
   required?: boolean;
+  /** Column coloring. Three forms:
+   *  - **Static** (`string`): any CSS color. Whole column (cells + header) gets a soft tint.
+   *  - **Rule array** (`ColorRule[]`): JSON-serializable conditional formatting. Top-down;
+   *    first match wins. Header stays default.
+   *  - **Function** (`CellColorFn`): called per cell; return a color or undefined. For logic
+   *    the rule array can't express. Header stays default. */
+  color?: string | ColorRule[] | CellColorFn;
 }
 
 export interface MonkeyTableProps {
@@ -833,8 +874,9 @@ export declare function MonkeyTable(props: MonkeyTableProps): ReactElement;
 // Config-driven API
 // =============================================================================
 
-/** Column shape the JSON config supports — drops the two non-serializable
- *  fields (`render`, `icon`) from MonkeyTableColumn. */
+/** Column shape the JSON config supports — drops the non-serializable fields
+ *  (`render`, `icon`) from MonkeyTableColumn and narrows `color` to the
+ *  JSON-safe static form only. */
 export interface MonkeyTableConfigColumn {
   id: string;
   label?: string;
@@ -848,6 +890,11 @@ export interface MonkeyTableConfigColumn {
   sortable?: boolean;
   align?: 'left' | 'center' | 'right';
   required?: boolean;
+  /** Column color — JSON-safe forms only:
+   *  - `string` — static whole-column + header tint.
+   *  - `ColorRule[]` — top-down list of conditional rules; first match wins.
+   *  For fully-custom logic, use the function form on `<MonkeyTable>` directly. */
+  color?: string | ColorRule[];
 }
 
 /** Every scalar/enum MonkeyTable prop grouped into one serializable bucket. */

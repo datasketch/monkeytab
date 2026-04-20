@@ -20,14 +20,108 @@ import type { RowHeightOption } from '../ui/components/grid/Grid.tsx';
 import type { TextPopupSize } from '../ui/components/editors/TextPopupContext.tsx';
 import type { MonkeyTableColumn, MonkeyTableProps } from './MonkeyTable.tsx';
 
+// =============================================================================
+// Column color rules (JSON-serializable conditional formatting)
+// =============================================================================
+
+/** One condition inside a color rule. Compares the cell value — or another
+ *  field's value if `field` is set — against the condition operator.
+ *  First rule whose condition matches wins; no rules match = no color. */
+export type ColorCondition =
+  /** Strict equality (===). Use for string / number / boolean comparisons. */
+  | { op: 'equals'; value: unknown; field?: string }
+  /** Strict inequality (!==). */
+  | { op: 'notEquals'; value: unknown; field?: string }
+  /** Numeric less-than. Non-numeric values never match. */
+  | { op: 'lt'; value: number; field?: string }
+  /** Numeric less-than-or-equal. */
+  | { op: 'lte'; value: number; field?: string }
+  /** Numeric greater-than. */
+  | { op: 'gt'; value: number; field?: string }
+  /** Numeric greater-than-or-equal. */
+  | { op: 'gte'; value: number; field?: string }
+  /** Substring match (case-insensitive) on string cells. */
+  | { op: 'contains'; value: string; field?: string }
+  /** Inverse of `contains`. */
+  | { op: 'notContains'; value: string; field?: string }
+  /** Value is null, undefined, empty string, or empty array. */
+  | { op: 'empty'; field?: string }
+  /** Value is present (inverse of `empty`). */
+  | { op: 'notEmpty'; field?: string }
+  /** Value strictly-equals one of the provided options. */
+  | { op: 'in'; values: unknown[]; field?: string }
+  /** Value does not strictly-equal any of the provided options. */
+  | { op: 'notIn'; values: unknown[]; field?: string };
+
+/** A single conditional-formatting rule: when this condition matches, tint
+ *  the cell with this color. Rules evaluate top-down — first match wins. */
+export interface ColorRule {
+  when: ColorCondition;
+  color: string;
+}
+
+function isEmpty(v: unknown): boolean {
+  if (v == null) return true;
+  if (typeof v === 'string' && v === '') return true;
+  if (Array.isArray(v) && v.length === 0) return true;
+  return false;
+}
+
+function evaluateCondition(
+  cond: ColorCondition,
+  row: Record<string, Value>,
+  cellValue: Value,
+): boolean {
+  const target: unknown = cond.field ? row[cond.field] ?? null : cellValue;
+  switch (cond.op) {
+    case 'equals': return target === cond.value;
+    case 'notEquals': return target !== cond.value;
+    case 'lt': return typeof target === 'number' && target < cond.value;
+    case 'lte': return typeof target === 'number' && target <= cond.value;
+    case 'gt': return typeof target === 'number' && target > cond.value;
+    case 'gte': return typeof target === 'number' && target >= cond.value;
+    case 'contains':
+      return typeof target === 'string' && target.toLowerCase().includes(cond.value.toLowerCase());
+    case 'notContains':
+      return typeof target !== 'string' || !target.toLowerCase().includes(cond.value.toLowerCase());
+    case 'empty': return isEmpty(target);
+    case 'notEmpty': return !isEmpty(target);
+    case 'in': return cond.values.includes(target);
+    case 'notIn': return !cond.values.includes(target);
+  }
+}
+
+/** Run a rule array top-down against a cell. Returns the first matching
+ *  rule's color, or undefined when no rule matches. Safe to call with an
+ *  empty or missing array — returns undefined. */
+export function evaluateColorRules(
+  rules: ColorRule[] | undefined | null,
+  row: Record<string, Value>,
+  value: Value,
+): string | undefined {
+  if (!rules || rules.length === 0) return undefined;
+  for (const rule of rules) {
+    if (evaluateCondition(rule.when, row, value)) return rule.color;
+  }
+  return undefined;
+}
+
 /**
- * Column shape the config supports. Drops the two non-serializable fields
- * (`render`, `icon`) from MonkeyTableColumn — the rest survives JSON round-trip.
+ * Column shape the config supports. Drops the non-serializable fields
+ * (`render`, `icon`) and narrows `color` to the JSON-safe forms (static
+ * string or rule array) — the rest survives a JSON round-trip.
  */
-export type MonkeyTableConfigColumn = Omit<MonkeyTableColumn, 'render' | 'icon'> & {
+export type MonkeyTableConfigColumn = Omit<MonkeyTableColumn, 'render' | 'icon' | 'color'> & {
   id: string;
   type?: FieldType;
   options?: FieldOptions;
+  /** Column color — JSON-safe forms only:
+   *  - `string` — static whole-column + header tint.
+   *  - `ColorRule[]` — top-down list of `{ when, color }` rules; first match wins.
+   *    Header stays default in this mode (same as the function form on the prop API).
+   *  For fully-custom conditional logic, use the function form of `column.color`
+   *  on `<MonkeyTable>` directly — functions aren't JSON-serializable. */
+  color?: string | ColorRule[];
 };
 
 /**

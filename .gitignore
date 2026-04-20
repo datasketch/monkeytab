@@ -12,3 +12,7 @@ deno.lock
 .local/
 CLAUDE.md
 .claude/
+# Sync-owner-only config, regenerated on every sync. Public
+# contributors don't have .local/, so committing it would give
+# them broken references. See CLAUDE.md for context.
+deno.json

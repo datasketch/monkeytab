@@ -49,12 +49,16 @@ interface GridCellProps {
   isRowPending?: boolean;
   /** Row is a draft (local-only until a cell save triggers promotion). */
   isRowDraft?: boolean;
+  /** Per-cell tint color — applied as a soft background when no higher-priority
+   *  state (selection, search match, range, fill target, column selection, computed)
+   *  is active. Used by column-level `color` props. */
+  cellColor?: string;
 }
 
 // Field types that need minimal padding to show their content properly
 const VISUAL_FIELD_TYPES = ['Image', 'Attachment'];
 
-export function GridCell({ rowId, field, value, row, customRenderer, align, onSave, onContextMenu, onFillStart, isFillTarget, isInRange, height, width, fixedHeight = true, allFields, isColumnSelected, isCompact, onUpload, isRowPending, isRowDraft }: GridCellProps) {
+export function GridCell({ rowId, field, value, row, customRenderer, align, onSave, onContextMenu, onFillStart, isFillTarget, isInRange, height, width, fixedHeight = true, allFields, isColumnSelected, isCompact, onUpload, isRowPending, isRowDraft, cellColor }: GridCellProps) {
   const contentRef = useRef<HTMLDivElement>(null);
   const [hasVerticalOverflow, setHasVerticalOverflow] = useState(false);
   const [hasHorizontalOverflow, setHasHorizontalOverflow] = useState(false);
@@ -312,6 +316,9 @@ export function GridCell({ rowId, field, value, row, customRenderer, align, onSa
         }),
         ...(isColumnSelected && !isSelected && !isFillTarget && !isInRange && !isComputed && {
           background: '#f8fafc',
+        }),
+        ...(cellColor && !isSelected && !isCellMatch && !isInRange && !isColumnSelected && !isFillTarget && !isComputed && {
+          background: `color-mix(in srgb, ${cellColor} 30%, white)`,
         }),
         ...(isFillTarget && !isSelected && {
           background: '#dbeafe',

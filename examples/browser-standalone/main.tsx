@@ -47,15 +47,36 @@ const COLUMNS = [
 
 const COLUMN_OPTIONS_COLUMNS = [
   { id: 'Product', width: 200, minWidth: 150, maxWidth: 300 },
-  { id: 'SKU', width: 120, editable: false, sortable: false },
+  // Static `color`: the whole SKU column (including its header) reads as a soft
+  // read-only band. Good for flagging columns the user shouldn't touch.
+  { id: 'SKU', width: 120, editable: false, sortable: false, color: '#f1f5f9' },
   { id: 'Category', type: 'SingleSelect' as const, width: 140, options: { options: [
     { value: 'Electronics', label: 'Electronics', color: '#dbeafe' },
     { value: 'Clothing', label: 'Clothing', color: '#fce7f3' },
     { value: 'Food', label: 'Food', color: '#dcfce7' },
     { value: 'Books', label: 'Books', color: '#fef3c7' },
   ]}},
-  { id: 'Price', type: 'Number' as const, width: 110, align: 'right' as const, options: { precision: 2 } },
-  { id: 'Stock', type: 'Number' as const, width: 90, align: 'center' as const, editable: false },
+  // Rule-array `color`: JSON-serializable conditional formatting. Rules evaluate
+  // top-down — the first match wins. Red for high-ticket items, pale yellow for
+  // cheap ones. Works in `<MonkeyTableFromConfig>` too (same JSON shape).
+  { id: 'Price', type: 'Number' as const, width: 110, align: 'right' as const, options: { precision: 2 },
+    color: [
+      { when: { op: 'gte' as const, value: 100 }, color: '#fee2e2' },
+      { when: { op: 'lt' as const, value: 25 }, color: '#fef9c3' },
+    ],
+  },
+  // Function `color`: escape hatch for logic the rule array can't express —
+  // here, a three-tier band built from the numeric value. Header stays default
+  // (no row to evaluate against). Prop-API only (not JSON-serializable).
+  { id: 'Stock', type: 'Number' as const, width: 90, align: 'center' as const, editable: false,
+    color: (_row: Record<string, unknown>, value: unknown) => {
+      if (typeof value !== 'number') return undefined;
+      if (value === 0) return '#fecaca';      // out of stock
+      if (value < 100) return '#fed7aa';      // low
+      if (value > 500) return '#bbf7d0';      // overstocked
+      return undefined;
+    },
+  },
   { id: 'Available', type: 'Boolean' as const, width: 100, align: 'center' as const },
   { id: 'Notes', width: 250, minWidth: 150, maxWidth: 500 },
 ];
@@ -980,8 +1001,48 @@ function App() {
   const [ghostGrid, setGhostGrid] = useState(true);
   const [groupBy, setGroupBy] = useState<string | null>(null);
   const [colorBy, setColorBy] = useState<string | null>(null);
+  // Runtime column-coloring: pick a column id + a CSS color and it's applied
+  // as a static `column.color` string on the active tab's table. Demonstrates
+  // that the prop works live; same shape you'd put in a JSON config.
+  const [userColumnId, setUserColumnId] = useState<string | null>(null);
+  const [userColumnColor, setUserColumnColor] = useState<string>('#fde68a');
 
   const locale = language === 'es' ? 'es-CO' : 'en-US';
+
+  // Which column set the toolbar controls (Row color + Column color) should
+  // address for the currently-active tab. Tabs not listed here are wired
+  // inside sub-components — the toolbar dropdowns will show "None" only and
+  // clear when the user switches to them.
+  const TAB_COLUMNS: Record<string, ReadonlyArray<{ id: string; type?: string }>> = useMemo(() => ({
+    editable: COLUMNS,
+    columns: COLUMN_OPTIONS_COLUMNS,
+    readonly: METRICS_COLUMNS,
+  }), []);
+  const activeColumnSet = TAB_COLUMNS[tab] ?? [];
+
+  // If the selected column / colorBy field doesn't exist on the new tab,
+  // silently clear — the control shouldn't dangle a stale selection.
+  useEffect(() => {
+    if (userColumnId && !activeColumnSet.some((c) => c.id === userColumnId)) {
+      setUserColumnId(null);
+    }
+    if (colorBy && !activeColumnSet.some((c) => c.id === colorBy)) {
+      setColorBy(null);
+    }
+  }, [tab, activeColumnSet, userColumnId, colorBy]);
+
+  // Overlay the user's color onto the active tab's columns. Leaves everything
+  // else alone (including per-column `color` that was already set in source —
+  // the user's pick only wins for the column they picked).
+  const overlayUserColor = <T extends { id: string }>(cols: ReadonlyArray<T>): T[] => {
+    if (!userColumnId) return cols as T[];
+    return cols.map((c) =>
+      c.id === userColumnId ? ({ ...c, color: userColumnColor } as T) : c,
+    );
+  };
+  const editableColumns = useMemo(() => overlayUserColor(COLUMNS), [userColumnId, userColumnColor]);
+  const columnsTabColumns = useMemo(() => overlayUserColor(COLUMN_OPTIONS_COLUMNS), [userColumnId, userColumnColor]);
+  const readonlyTabColumns = useMemo(() => overlayUserColor(METRICS_COLUMNS), [userColumnId, userColumnColor]);
 
   const handleSortChange = (fieldId: string | null, direction: 'asc' | 'desc' | null) => {
     setSortBy(fieldId);
@@ -1042,19 +1103,57 @@ function App() {
             </select>
           </label>
           <label style={{ fontSize: '14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-            Color:
+            Row color:
             <select
               value={colorBy ?? ''}
               onChange={(e) => setColorBy(e.target.value || null)}
               style={{ padding: '2px 6px', fontSize: '13px', borderRadius: '4px', border: '1px solid #d1d5db' }}
+              disabled={activeColumnSet.length === 0}
+              title={activeColumnSet.length === 0
+                ? 'This tab runs inside a sub-component — row coloring is wired there, not at the toolbar'
+                : 'Row background tint from a SingleSelect / MultiSelect / Boolean field'}
             >
               <option value="">None</option>
-              {COLUMNS
+              {activeColumnSet
                 .filter((c) => (['SingleSelect', 'MultiSelect', 'Boolean'] as string[]).includes(c.type as string))
                 .map((c) => (
                   <option key={c.id} value={c.id}>{c.id}</option>
                 ))}
             </select>
+          </label>
+          <label style={{ fontSize: '14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+            Column color:
+            <select
+              value={userColumnId ?? ''}
+              onChange={(e) => setUserColumnId(e.target.value || null)}
+              style={{ padding: '2px 6px', fontSize: '13px', borderRadius: '4px', border: '1px solid #d1d5db' }}
+              disabled={activeColumnSet.length === 0}
+              title={activeColumnSet.length === 0
+                ? 'This tab runs inside a sub-component — column coloring is wired there, not at the toolbar'
+                : 'Pick a column to tint (header + all cells) with the color next to this dropdown'}
+            >
+              <option value="">None</option>
+              {activeColumnSet.map((c) => (
+                <option key={c.id} value={c.id}>{c.id}</option>
+              ))}
+            </select>
+            <input
+              type="color"
+              value={userColumnColor}
+              onChange={(e) => setUserColumnColor(e.target.value)}
+              disabled={!userColumnId}
+              style={{
+                width: '28px',
+                height: '24px',
+                padding: 0,
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                cursor: userColumnId ? 'pointer' : 'not-allowed',
+                opacity: userColumnId ? 1 : 0.4,
+                background: 'none',
+              }}
+              title={userColumnId ? `Tint the "${userColumnId}" column with this color` : 'Pick a column first'}
+            />
           </label>
           {tab === 'editable' && (
             <>
@@ -1082,7 +1181,7 @@ function App() {
             <div className="desc">Click cells to edit. Add/delete rows. Drag columns to reorder. Try the filter and search.</div>
             <div className="table-container">
               <MonkeyTable
-                columns={COLUMNS}
+                columns={editableColumns}
                 rows={INITIAL_ROWS}
                 onChange={handleChange}
                 sortBy={sortBy}
@@ -1146,12 +1245,22 @@ function App() {
           <div className="example" style={{ display: 'flex', flexDirection: 'column', minHeight: 'calc(100vh - 200px)' }}>
             <h2>Column Options</h2>
             <div className="desc">
-              Per-column <code>width</code>, <code>minWidth</code>, <code>maxWidth</code>, <code>align</code>, <code>editable</code>, and <code>sortable</code>.
-              SKU and Stock are read-only. SKU is not sortable. Price and Stock are right/center-aligned.
+              Per-column <code>width</code>, <code>minWidth</code>, <code>maxWidth</code>, <code>align</code>, <code>editable</code>, <code>sortable</code>, and
+              {' '}<strong><code>color</code></strong>.
+              SKU and Stock are read-only; SKU is not sortable; Price and Stock are right/center-aligned.
+              <br />
+              <br />
+              <strong>Column coloring demo</strong> — three shapes, one prop:
+              <ul style={{ margin: '6px 0 0 1.2em', padding: 0 }}>
+                <li><strong>Static</strong>: <code>SKU</code> uses <code>color: '#f1f5f9'</code> — whole column + header get a soft read-only band.</li>
+                <li><strong>Rule array</strong>: <code>Price</code> uses <code>color: [&#123; when: &#123; op: 'gte', value: 100 &#125;, color: '#fee2e2' &#125;, &#123; when: &#123; op: 'lt', value: 25 &#125;, color: '#fef9c3' &#125;]</code>. Top-down, first match wins. JSON-serializable, so this works verbatim in <code>&lt;MonkeyTableFromConfig&gt;</code>.</li>
+                <li><strong>Function</strong>: <code>Stock</code> uses <code>color: (row, value) =&gt; …</code> with a three-tier band (red at 0, orange &lt; 100, green &gt; 500). Escape hatch for anything rule data can't express.</li>
+              </ul>
+              Tints compose with row-level coloring (the <em>Row color</em> dropdown on the Editable Table tab) and the search yellow highlight. Higher-priority states — selection, range, drag, Computed fields — still override.
             </div>
             <div className="table-container" style={{ flex: 1, height: 'auto' }}>
               <MonkeyTable
-                columns={COLUMN_OPTIONS_COLUMNS}
+                columns={columnsTabColumns}
                 rows={COLUMN_OPTIONS_ROWS}
                 ghostGrid={ghostGrid}
                 height="100%"
@@ -1175,7 +1284,7 @@ function App() {
             <div className="desc">Set <code>editable=false</code> to display data without mutation controls.</div>
             <div className="table-container">
               <MonkeyTable
-                columns={METRICS_COLUMNS}
+                columns={readonlyTabColumns}
                 rows={METRICS_ROWS}
                 editable={false}
                 height="100%"

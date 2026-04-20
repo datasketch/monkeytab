@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-04-19
+
+### New
+- **Column coloring (`column.color`)** — three shapes, same prop. Pass a CSS color string to tint a whole column (every cell + the header) with a soft blend — good for flagging a non-editable column or grouping related columns visually. Pass a `ColorRule[]` (`{ when: { op, value/values, field? }, color }`) for JSON-serializable Google-Sheets-style conditional formatting; rules evaluate top-down and the first match wins. Operators include `equals`/`notEquals`, `lt`/`lte`/`gt`/`gte`, `contains`/`notContains`, `empty`/`notEmpty`, and `in`/`notIn`; each can optionally compare a different field. For anything the rule array can't express (palettes, numeric interpolation, cross-field math), pass a `(row, value, fieldId) => string | undefined` function instead — prop-API only. The evaluator is exported as `evaluateColorRules(rules, row, value)` so the same rules can be reused outside the grid. See [BROWSER.md → Column coloring](./BROWSER.md#column-coloring-columncolor).
+
+### Fixed
+- **Header overflow fade now tints with the column** — when a column uses `color` to tint its header, the right-edge fade gradient blends into the tinted background instead of showing a strip of default gray. Symmetric with the row-background fade that already respected `colorBy`.
+
 ## [0.5.0] — 2026-04-19
 
 ### New
@@ -118,7 +126,8 @@ First public release.
 - `onUpload` prop — bring your own file upload (S3, Cloudinary, etc.)
 - Drag-and-drop and paste support for Image cells
 
-[Unreleased]: https://github.com/datasketch/monkeytab/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/datasketch/monkeytab/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/datasketch/monkeytab/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/datasketch/monkeytab/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/datasketch/monkeytab/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/datasketch/monkeytab/compare/v0.2.1...v0.3.0

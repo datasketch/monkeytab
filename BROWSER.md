@@ -174,8 +174,81 @@ interface MonkeyTableColumn {
   maxWidth?: number;                       // maximum width (default: 600)
   sortable?: boolean;                      // can this column be sorted (default: true)
   align?: 'left' | 'center' | 'right';     // cell text alignment
+  color?: string | CellColorFn;            // column color — static string or per-cell fn
 }
+
+type CellColorFn = (
+  row: Record<string, Value>,
+  value: Value,
+  fieldId: string,
+) => string | undefined;
 ```
+
+### Column coloring (`column.color`)
+
+Three shapes, from simplest to most flexible:
+
+- **Static** (`string`) — any CSS color. Every cell in the column plus the header gets a soft tint of that color. Good for marking a non-editable column, flagging a column that needs attention, or grouping related columns visually.
+- **Rule array** (`ColorRule[]`) — JSON-serializable conditional formatting. Each rule is `{ when: ColorCondition, color: string }`. Rules evaluate top-down; first match wins. Header stays default in this mode. Works in the JSON config form.
+- **Function** (`CellColorFn`) — `(row, value, fieldId) => string | undefined`. For anything the rule array can't express: palettes, numeric interpolation, cross-field math. Header stays default. Prop-API only (functions aren't JSON-serializable).
+
+Tints always blend with `color-mix(… 30%, white)` so dark colors stay readable, and compose cleanly with the row-level `colorBy` tint and the in-search yellow highlight.
+
+```tsx
+<MonkeyTable
+  columns={[
+    { id: 'Name' },
+    // Static: the whole "CreatedAt" column + header reads as a read-only band.
+    { id: 'CreatedAt', type: 'Date', editable: false, color: '#f1f5f9' },
+    // Rule array: red < 50, green ≥ 90, else untouched. Also works in JSON config.
+    {
+      id: 'Score',
+      type: 'Number',
+      color: [
+        { when: { op: 'lt', value: 50 }, color: '#fee2e2' },
+        { when: { op: 'gte', value: 90 }, color: '#dcfce7' },
+      ],
+    },
+    // Function: same effect but with a mid-range yellow band, and arbitrary logic.
+    {
+      id: 'Priority',
+      color: (_row, value) => {
+        if (value === 'P0') return '#fecaca';
+        if (value === 'P1') return '#fed7aa';
+        return undefined;
+      },
+    },
+  ]}
+  rows={rows}
+/>
+```
+
+**Rule operators.** `ColorCondition` is a tagged union keyed by `op`:
+
+| op | value(s) | Matches when |
+|---|---|---|
+| `equals` / `notEquals` | `value: unknown` | strict `===` / `!==` |
+| `lt` / `lte` / `gt` / `gte` | `value: number` | numeric comparison (non-numeric cells never match) |
+| `contains` / `notContains` | `value: string` | case-insensitive substring on string cells |
+| `empty` / `notEmpty` | — | `null`, `undefined`, `""`, or `[]` |
+| `in` / `notIn` | `values: unknown[]` | value is / isn't one of the list |
+
+Every operator accepts an optional `field: string` to compare against a **different** column's value instead of the cell's own — useful for "tint the `Status` cell when `Owner` is empty":
+
+```ts
+color: [
+  { when: { op: 'empty', field: 'Owner' }, color: '#fef3c7' },
+]
+```
+
+For callers who want to reuse the same evaluator outside the grid (e.g., in a summary widget), `evaluateColorRules(rules, row, value)` is exported too:
+
+```ts
+import { evaluateColorRules } from '@datasketch/monkeytab';
+const tint = evaluateColorRules(col.color as ColorRule[], row, row.Score);
+```
+
+In the JSON config form (`<MonkeyTableFromConfig>`), `string` and `ColorRule[]` are both accepted. The function form stays prop-API-only.
 
 ---
 
@@ -243,6 +316,7 @@ const config: MonkeyTableConfig = {
 interface MonkeyTableConfig {
   schemaVersion?: number;              // reserved for future migrators
   columns: MonkeyTableConfigColumn[];  // same as MonkeyTableColumn, minus render/icon
+                                        //   and with color narrowed to string
   rows: Array<Record<string, Value>>;
   settings?: MonkeyTableConfigSettings;
 }
@@ -252,7 +326,9 @@ interface MonkeyTableConfig {
 above — `editable`, `height`, `pageSize`, `locale`, `groupBy`, `sortBy`,
 `dateDisplayFormat`, etc. Anything not serializable (React handlers, custom
 renderers/editors, `render`/`icon` on a column, `functions`/`constraints`,
-`presence`) stays as ordinary component props on `<MonkeyTableFromConfig>`.
+`presence`, conditional-coloring functions) stays as ordinary component props
+on `<MonkeyTableFromConfig>`. Static `column.color` (CSS string) is allowed
+in the config; the function form is prop-API-only.
 
 ### resolveConfig
 

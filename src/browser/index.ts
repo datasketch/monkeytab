@@ -4,11 +4,12 @@
  */
 
 // Main public API
-export { MonkeyTable, type MonkeyTableProps, type MonkeyTableColumn, type CellRendererFn, type MonkeyTableHandle } from './MonkeyTable.tsx';
+export { MonkeyTable, type MonkeyTableProps, type MonkeyTableColumn, type CellRendererFn, type CellColorFn, type ColorRule, type ColorCondition, type MonkeyTableHandle } from './MonkeyTable.tsx';
 
 // Config-driven façade — one JSON blob describes a whole table
 export {
   resolveConfig,
+  evaluateColorRules,
   type MonkeyTableConfig,
   type MonkeyTableConfigColumn,
   type MonkeyTableConfigSettings,

@@ -268,7 +268,7 @@ export function GridHeader({
               right: 0,
               bottom: 0,
               width: '20px',
-              background: 'linear-gradient(to right, transparent, #f9fafb)',
+              background: 'linear-gradient(to right, transparent, var(--mt-header-bg, #f9fafb))',
               pointerEvents: 'none',
             }}
           />

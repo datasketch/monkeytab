@@ -50,6 +50,19 @@ registerDefaults();
 /** Custom cell renderer function for a column */
 export type CellRendererFn = (value: Value, row: Record<string, Value>, fieldId: string) => React.ReactNode;
 
+/** Per-cell coloring function — return a CSS color to tint the cell, or undefined for no color.
+ *  Only the cells are tinted; the column header stays untouched. For a column-wide tint
+ *  (header included), pass a plain CSS color string instead. */
+export type CellColorFn = (row: Record<string, Value>, value: Value, fieldId: string) => string | undefined;
+
+// Re-export the JSON-serializable color-rule types from config.ts so callers
+// can import everything from '@datasketch/monkeytab' without reaching into
+// sub-modules. The runtime evaluator (`evaluateColorRules`) is what actually
+// consumes these at render time.
+import { evaluateColorRules as _evaluateColorRules } from './config.ts';
+export type { ColorRule, ColorCondition } from './config.ts';
+import type { ColorRule } from './config.ts';
+
 export interface MonkeyTableColumn {
   id: string;
   label?: string;
@@ -76,6 +89,21 @@ export interface MonkeyTableColumn {
   /** When true, Add Row is blocked unless this column has a value.
    *  Missing = null, undefined, '', or []. `0` and `false` count as present. */
   required?: boolean;
+  /** Column coloring. Three forms:
+   *
+   *  - **Static** (`string`): any CSS color. The whole column — every cell plus the header —
+   *    gets a soft tint of this color. Useful for flagging a non-editable column or a column
+   *    that needs attention.
+   *  - **Rule array** (`ColorRule[]`): JSON-serializable conditional formatting. Each rule is
+   *    `{ when: ColorCondition, color: string }`; evaluated top-down, first match wins. Header
+   *    stays default in this mode. Works in the JSON config too.
+   *  - **Function** (`CellColorFn`): called per cell; return a CSS color for cells that
+   *    should be tinted, or `undefined` for no tint. Header stays default. For fully-custom
+   *    logic the rule array can't express (palettes, interpolation, cross-field derivations).
+   *
+   *  Tints always blend with `color-mix(… 30%, white)` so dark colors stay readable, and
+   *  compose cleanly with row-level `colorBy` tints and the in-search yellow highlight. */
+  color?: string | ColorRule[] | CellColorFn;
 }
 
 export interface MonkeyTableProps {
@@ -468,6 +496,7 @@ function MonkeyTableInner({
     const maxWidthMap: Record<string, number> = {};
     const sortableMap: Record<string, boolean> = {};
     const alignMap: Record<string, 'left' | 'center' | 'right'> = {};
+    const colorMap: Record<string, string | CellColorFn> = {};
     for (const col of visibleColumns) {
       if (col.editable !== undefined) editableMap[col.id] = col.editable;
       if (col.width !== undefined) widthMap[col.id] = col.width;
@@ -475,6 +504,16 @@ function MonkeyTableInner({
       if (col.maxWidth !== undefined) maxWidthMap[col.id] = col.maxWidth;
       if (col.sortable !== undefined) sortableMap[col.id] = col.sortable;
       if (col.align !== undefined) alignMap[col.id] = col.align;
+      // Normalize the 3-way color union down to what Grid already understands:
+      // a rule array becomes a function; static strings and functions pass through.
+      if (col.color !== undefined) {
+        if (Array.isArray(col.color)) {
+          const rules = col.color;
+          colorMap[col.id] = (row, value) => _evaluateColorRules(rules, row, value);
+        } else {
+          colorMap[col.id] = col.color;
+        }
+      }
     }
     return {
       editable: Object.keys(editableMap).length > 0 ? editableMap : undefined,
@@ -483,6 +522,7 @@ function MonkeyTableInner({
       maxWidth: Object.keys(maxWidthMap).length > 0 ? maxWidthMap : undefined,
       sortable: Object.keys(sortableMap).length > 0 ? sortableMap : undefined,
       align: Object.keys(alignMap).length > 0 ? alignMap : undefined,
+      color: Object.keys(colorMap).length > 0 ? colorMap : undefined,
     };
   }, [visibleColumns]);
 
@@ -934,6 +974,7 @@ function MonkeyTableInner({
                 columnMaxWidth={columnConfig.maxWidth}
                 columnSortable={columnConfig.sortable}
                 columnAlign={columnConfig.align}
+                columnColor={columnConfig.color}
                 onUpload={onUpload}
                 onCellChange={onCellChange}
                 onSortChange={onSortChange}

@@ -29,7 +29,7 @@ import {
   useEmptyTrash,
   useUpdateFieldType,
 } from '../ui/hooks/useMutation.ts';
-import { Grid, type RowHeightOption, type CellRenderer as GridCellRenderer } from '../ui/components/grid/Grid.tsx';
+import { Grid, type RowHeightOption, type CellRenderer as GridCellRenderer, type ColumnColor } from '../ui/components/grid/Grid.tsx';
 import { GridToolbar } from '../ui/components/grid/GridToolbar.tsx';
 import type { Value, FieldOptions, FieldType, Row, FilterGroup, SortSpec, ComputedFieldOptions } from '@monkeytab/core';
 import { DEFAULT_SETTINGS, mergeSettings } from '@monkeytab/core';
@@ -71,6 +71,8 @@ export interface TableViewProps {
   columnSortable?: Record<string, boolean>;
   /** Per-column text alignment (fieldId → 'left'|'center'|'right') */
   columnAlign?: Record<string, 'left' | 'center' | 'right'>;
+  /** Per-column coloring (fieldId → CSS color string or per-cell color function) */
+  columnColor?: Record<string, ColumnColor>;
   /** Consumer-provided file upload handler — passed to file-type editors */
   onUpload?: (file: File, fieldType: string) => Promise<string>;
   /** Called when a single cell value changes — fires with rowId, fieldId, new and old values */
@@ -132,7 +134,7 @@ export interface TableViewProps {
   onColumnUpdateOptions?: (fieldId: string, options: FieldOptions) => void;
 }
 
-export function TableView({ baseId, tableId, onNavigate, onNavigateHome, onSelectionChange, selectedRowIds, onRowClick, customRenderers, customIcons, columnEditable, columnWidth, columnMinWidth, columnMaxWidth, columnSortable, columnAlign, onUpload, onCellChange, onSortChange, sortBy, sortDirection, totalRows, page = 1, pageSize = 500, onPageChange, paginationMode = 'simple', paginationLoading, ghostGrid, columnFit, autoFitMin, autoFitMax, selectionActions, groupBy, groupCollapsed, onGroupByChange, groupOrder, colorBy, onColorByChange, colorByMap, onColumnRename, onColumnDelete, onColumnCreate, onColumnChangeType, onColumnUpdateOptions }: TableViewProps) {
+export function TableView({ baseId, tableId, onNavigate, onNavigateHome, onSelectionChange, selectedRowIds, onRowClick, customRenderers, customIcons, columnEditable, columnWidth, columnMinWidth, columnMaxWidth, columnSortable, columnAlign, columnColor, onUpload, onCellChange, onSortChange, sortBy, sortDirection, totalRows, page = 1, pageSize = 500, onPageChange, paginationMode = 'simple', paginationLoading, ghostGrid, columnFit, autoFitMin, autoFitMax, selectionActions, groupBy, groupCollapsed, onGroupByChange, groupOrder, colorBy, onColorByChange, colorByMap, onColumnRename, onColumnDelete, onColumnCreate, onColumnChangeType, onColumnUpdateOptions }: TableViewProps) {
   const { t } = useI18n();
   const client = useClient();
   const { data: base } = useBase(baseId);
@@ -556,6 +558,7 @@ export function TableView({ baseId, tableId, onNavigate, onNavigateHome, onSelec
           columnMaxWidth={columnMaxWidth}
           columnSortable={columnSortable}
           columnAlign={columnAlign}
+          columnColor={columnColor}
           onColumnRename={!isReadOnly && onColumnRename ? handleColumnRename : undefined}
           onColumnDelete={canDeleteField && onColumnDelete ? handleColumnDelete : undefined}
           onColumnUpdateOptions={!isReadOnly && onColumnUpdateOptions ? handleColumnUpdateOptions : undefined}

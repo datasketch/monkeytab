@@ -128,6 +128,14 @@ const COMPACT_ROW_HEIGHTS: Record<Exclude<RowHeightOption, 'fit'>, number> = {
 /** Custom cell renderer function — receives value, full row, and field ID */
 export type CellRenderer = (value: Value, row: Row, fieldId: string) => React.ReactNode;
 
+/** Per-cell coloring function — receives the denormalized row, the cell value, and the field ID.
+ *  Return a CSS color string to tint the cell, or undefined for no tint. */
+export type ColumnColorFn = (row: Record<string, Value>, value: Value, fieldId: string) => string | undefined;
+
+/** Column color entry: a plain CSS string (static — whole column + header) or a function
+ *  (conditional — per cell; header stays uncolored). */
+export type ColumnColor = string | ColumnColorFn;
+
 interface GridProps {
   table: TableSpec;
   rows: Row[];
@@ -175,6 +183,10 @@ interface GridProps {
   columnSortable?: Record<string, boolean>;
   /** Per-column text alignment (fieldId → 'left'|'center'|'right') */
   columnAlign?: Record<string, 'left' | 'center' | 'right'>;
+  /** Per-column coloring (fieldId → CSS color string OR per-cell function).
+   *  String = static whole-column tint (cells + header).
+   *  Function = conditional per-cell tint (header stays default). */
+  columnColor?: Record<string, ColumnColor>;
   /** Consumer-provided file upload handler — passed to file-type editors */
   onUpload?: (file: File, fieldType: string) => Promise<string>;
   /** Show a subtle loading indicator inside the grid */
@@ -235,6 +247,7 @@ export function Grid({
   columnMaxWidth,
   columnSortable,
   columnAlign,
+  columnColor,
   onUpload,
   loading = false,
   ghostGrid,
@@ -1396,6 +1409,9 @@ export function Grid({
                 const showDropAfter = isDragOverThis && columnDropPosition === 'after';
                 const isColumnSelected = selectedColumns.has(fieldId);
                 const isDimmed = (draggedColumn && isColumnSelected && selectedColumns.size > 1) || isDraggingThis;
+                // Static column color tints the header too (function form doesn't — no row to evaluate).
+                const staticColColor = typeof columnColor?.[fieldId] === 'string' ? columnColor[fieldId] as string : undefined;
+                const headerTint = staticColColor ? `color-mix(in srgb, ${staticColColor} 20%, #f9fafb)` : undefined;
 
                 return (
                   <th
@@ -1423,9 +1439,14 @@ export function Grid({
                       borderRight: '1px solid #e5e7eb',
                       whiteSpace: 'nowrap',
                       cursor: 'pointer',
-                      background: isColumnSelected ? '#eff6ff' : '#f9fafb',
+                      background: isColumnSelected ? '#eff6ff' : (headerTint ?? '#f9fafb'),
                       boxShadow: isColumnSelected ? 'inset 0 -3px 0 #2563eb' : undefined,
                       width: header.getSize(),
+                      // Expose the header's effective background so GridHeader's
+                      // overflow-fade gradient blends into it (same pattern as
+                      // --mt-row-bg for body cells) — without this, tinted
+                      // headers show a strip of the default gray at the fade.
+                      ['--mt-header-bg' as any]: isColumnSelected ? '#eff6ff' : (headerTint ?? '#f9fafb'),
                       minWidth: header.column.columnDef.minSize,
                       maxWidth: header.column.columnDef.maxSize,
                       opacity: isDimmed ? 0.5 : 1,
@@ -1808,6 +1829,19 @@ export function Grid({
                     const cellEditable = !isComputed && isColumnEditable;
                     const cellRowId = row.original.id;
                     const inRange = isCellInRange(anchorCell, activeCell, cellRowId, field.id, rowIds, fieldIds);
+                    // Resolve per-cell color: static string applies everywhere; function is
+                    // called per cell with the denormalized row. Bad return values are ignored.
+                    const colorEntry = columnColor?.[field.id];
+                    let resolvedCellColor: string | undefined;
+                    if (typeof colorEntry === 'string') {
+                      resolvedCellColor = colorEntry;
+                    } else if (typeof colorEntry === 'function') {
+                      try {
+                        resolvedCellColor = colorEntry(row.original.fields, row.original.fields[field.id] ?? null, field.id);
+                      } catch {
+                        resolvedCellColor = undefined;
+                      }
+                    }
                     return (
                       <GridCell
                         key={cell.id}
@@ -1819,6 +1853,7 @@ export function Grid({
                         isCompact={isCompact}
                         isInRange={inRange}
                         align={columnAlign?.[field.id]}
+                        cellColor={resolvedCellColor}
                         onSave={cellEditable ? onCellSave : undefined}
                         onContextMenu={(e) => {
                           e.preventDefault();
