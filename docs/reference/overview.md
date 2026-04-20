@@ -4,22 +4,21 @@ This section is the formal API reference for `@datasketch/monkeytab`.
 
 ## Where to find what
 
-The full API documentation lives in three top-level files in the public repo:
+- **[API reference](/docs/reference/browser)** —
+  complete `<MonkeyTable>` props reference, every field type, every option,
+  including the config-driven API and per-column coloring.
+- **[Extension API](/docs/reference/extending)** —
+  how to add custom renderers, editors, computed functions, and constraints.
+- **[Architecture](/docs/reference/architecture)** —
+  the high-level architecture of the package.
+- **[Changelog](/docs/changelog)** —
+  version history.
 
-- **[BROWSER.md](https://github.com/datasketch/monkeytab/blob/main/BROWSER.md)** —
-  complete `<MonkeyTable>` props reference, every field type, every option
-- **[EXTENDING.md](https://github.com/datasketch/monkeytab/blob/main/EXTENDING.md)** —
-  how to add custom renderers, editors, computed functions, and constraints
-- **[docs/architecture.md](https://github.com/datasketch/monkeytab/blob/main/docs/architecture.md)** —
-  the high-level architecture of the package
-
-These files ship with the npm package and are also rendered here on the site
-(coming soon — we're wiring up the file mirror).
+Each page mirrors a file that ships with the npm package — `BROWSER.md`,
+`EXTENDING.md`, `architecture.md`, and `CHANGELOG.md` at the public repo
+root. The pages here render from a shared source, so every change on
+github is live here immediately.
 
 ## Quick links
 
-- [Get started](/guides/getting-started)
-- [Field types](/guides/columns)
-- [Editing & shortcuts](/guides/editing)
-- [Sorting & pagination](/guides/sorting-pagination)
-- [Extending](/guides/extending)
+- [Get started](/docs/guides/getting-started)
